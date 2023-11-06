@@ -1,3 +1,5 @@
 .vscode/*
 
 01_basic_server_client/build/*
+
+02_protocol_parsing/build/*
