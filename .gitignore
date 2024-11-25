@@ -1,3 +1,5 @@
+build/
+
 .vscode/*
 
 01_basic_server_client/build/*
