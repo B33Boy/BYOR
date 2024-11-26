@@ -1,168 +1,115 @@
-#include <iostream>
+#include <array>      // std::array
+#include <cstdint>    // uint32_t, int32_t
+#include <cstring>    // std::memcpy, std::strlen
+#include <iostream>   // std::cout
 
+#include <arpa/inet.h>  // ntohs(), ntohl()
+#include <errno.h>      // errno
+#include <netinet/ip.h> // sockaddr_in
+#include <sys/socket.h> // socket(), setsockopt(), bind(), listen(), accept()
+#include <unistd.h>     // close(), read(), write()
 #include <assert.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/ip.h>
 
+constexpr size_t LEN_FIELD_SIZE{ 4 };
+constexpr size_t MAX_MSG_FIELD_SIZE{ 16 };
 
-const size_t k_max_msg = 4096;
-
-/**
- * @brief reads up to n bytes in the kernel
- *
- * @param fd fd of server
- * @param buf pointer to char arr
- * @param n amount of bytes we want to read
- * @return int32_t 0
- */
-static int32_t read_full(int fd, char* buf, size_t n)
+int32_t read_full(int fd, char* buf, size_t num_to_read)
 {
-    /**
-     * The read() syscall just returns whatever data is available in the kernel, or blocks if there is none.
-     * It’s up to the application to handle insufficient data.
-     * The read_full() function reads from the kernel until it gets exactly n bytes.
-     */
-    while (n > 0)
+    int bytes_read{};
+
+    while (bytes_read < num_to_read)
     {
-        ssize_t rv = read(fd, buf, n);
-
-        if (rv <= 0)
-        {
+        int num_read = read(fd, buf + bytes_read, num_to_read - bytes_read);
+        if (num_read <= 0)
             return -1;
-        }
 
-        assert((size_t)rv <= n); // whatever we receive must not be gt or equal to n        
-        n -= (size_t)rv;
-        buf += rv; // increment buffer pointer so that we can receive the next set of bytes 
+        bytes_read += num_read;
     }
     return 0;
 }
 
-/**
- * @brief writes data
- *
- * @param fd fd of server
- * @param buf pointer to char arr
- * @param n amount of bytes we want to write
- * @return int32_t 0
- */
-static int32_t write_all(int fd, const char* buf, size_t n)
+int32_t write_all(int fd, char const* buf, size_t num_to_write)
 {
-    /**
-     * The write() syscall may return successfully with partial data written if the kernel buffer is full,
-     * we must keep trying when the write() returns fewer bytes than we need.
-     */
-    while (n > 0)
+    int bytes_written{};
+
+    while (bytes_written < num_to_write)
     {
-        ssize_t rv = write(fd, buf, n);
-        if (rv <= 0)
-        {
+        int num_written = write(fd, buf + bytes_written, num_to_write - bytes_written);
+        if (num_written < 0)
             return -1;
-        }
-        assert((size_t)rv <= n);
-        n -= (size_t)rv;
-        buf += rv;
+
+        bytes_written += num_written;
     }
     return 0;
 }
 
-
-/**
- * @brief handles one client connection at once
- *
- * @param connfd
- * @return int32_t
- */
-static int32_t one_request(int connfd)
+int32_t one_request(int connfd)
 {
-    // 4 bytes header
-    // First 4 bytes contain length of request, k_max_msg is the actual request message, +1 for null terminator
-    char rbuf[4 + k_max_msg + 1];
+    // Protocol: len1, msg1, \n
+    // Note: each len will be little endian integer
+    std::array<char, LEN_FIELD_SIZE + MAX_MSG_FIELD_SIZE + 1> rbuf{};
+
     errno = 0;
-    int32_t err = read_full(connfd, rbuf, 4);
+    // Read LEN_FIELD_SIZE bytes from client and store as msg_len
+    auto err = read_full(connfd, rbuf.data(), LEN_FIELD_SIZE);
     if (err)
     {
-        if (errno == 0) { std::cout << "EOF\n"; }
-        else { std::cout << "read() error\n"; }
+        if (errno == 0)
+            std::cout << "EOF\n";
+        else
+            std::cout << "read() error\n";
         return err;
     }
 
-    uint32_t len{ 0 }; // length of request obtained from header
-    memcpy(&len, rbuf, 4); // copy 4 bytes (little endian) from buffer to len
-    if (len > k_max_msg) { std::cout << "Message too long\n"; }
-
-    err = read_full(connfd, &rbuf[4], len); // read from 4th byte onwards
-
-    if (err) { std::cout << "read() error"; return err; }
-
-    // do something
-    rbuf[4 + len] = '\0';
-    std::cout << "client says: " << &rbuf[4];
-
-    // reply using same protocol
-    const char reply[]{ "world \n" };
-    len = (uint32_t)strlen(reply);
-    char wbuf[4 + sizeof(reply)];
-
-    memcpy(wbuf, &len, 4); // copy length to buffer
-    memcpy(&wbuf[4], reply, len); // copy the actual message into buffer
-
-    return write_all(connfd, wbuf, 4 + len);
-}
-
-
-/**
- * @brief How a server works
- *
- * 1. socket() - define communication endpoint
- * 2. bind() - bind fd to port
- * 3. listen() - mark socket to accept incoming requests
- * 4. accept() - accept connection with client
- * 5. read() - read incoming data from client
- * 6. write() - write response back to client
- */
-int main()
-{
-    /*
-    *   domain: AF_INET - IPv4 protocols
-    *   type: SOCK_STREAM - sequenced, two-way, connection-based byte streams
-    *   protocol: 0 - single protocol
-    */
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (server_fd < 0)
+    uint32_t msg_len{};
+    std::memcpy(&msg_len, rbuf.data(), LEN_FIELD_SIZE);
+    if (msg_len > MAX_MSG_FIELD_SIZE)
     {
-        std::cout << "Failed to create socket. errno: " << errno << "\n";
+        std::cout << "Too Long!\n";
+        return -1;
     }
 
-    /*
-    *   socket: fd of socket
-    *   level: SOL_SOCKET - socket API level
-    *   optname: SO_REUSEADDR - allow reuse of local addresses
-    *   optval: 1 - pointer to buffer where options are stored
-    *   optlen: sizeof(val) - size of optval buffer
-    */
+    // Read msg_length bytes body  
+    err = read_full(connfd, rbuf.data() + LEN_FIELD_SIZE, msg_len);
+    if (err)
+    {
+        std::cout << "read() error\n";
+        return err;
+    }
+
+    // Perform operation
+    rbuf[LEN_FIELD_SIZE + MAX_MSG_FIELD_SIZE] = '\0';
+    std::cout << "client says:" << rbuf.data() + LEN_FIELD_SIZE << "\n";
+
+    // Generate a response
+    constexpr auto reply{ "world\n" };
+    constexpr auto reply_len = (uint32_t)strlen(reply);
+    std::array<char, LEN_FIELD_SIZE + reply_len> wbuf{};
+
+    std::memcpy(wbuf.data(), &reply_len, LEN_FIELD_SIZE);
+    std::memcpy(wbuf.data() + LEN_FIELD_SIZE, reply, reply_len);
+
+    return write_all(connfd, wbuf.data(), LEN_FIELD_SIZE + reply_len);
+
+}
+
+int main()
+{
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd == -1)
+        std::cout << "Failed to create socket. errno: " << errno << "\n";
+
     int val = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
 
     struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
-    addr.sin_port = ntohs(1234); // ntohs converts ushort value from network byte order to host byte order
-    addr.sin_addr.s_addr = ntohl(0); // 0.0.0.0 means listen on all network interfaces of host
+    addr.sin_port = ntohs(1234);
+    addr.sin_addr.s_addr = ntohl(0);
 
-    if (bind(server_fd, (const sockaddr*)&addr, sizeof(addr)) != 0)
-    {
+    if (bind(server_fd, (const sockaddr*)&addr, sizeof(addr)) == -1)
         std::cout << "Failed to bind a sockaddr to server_fd\n";
-    }
 
-    // listen
     listen(server_fd, SOMAXCONN);
 
     while (true)
@@ -170,10 +117,10 @@ int main()
         struct sockaddr_in client_addr {};
         socklen_t socklen{ sizeof(client_addr) };
         int connfd = accept(server_fd, (struct sockaddr*)&client_addr, &socklen);
-        if (connfd < 0)
+        if (connfd == -1)
         {
             std::cout << "Connection failed with client addr\n";
-            continue; // conn error, keep alive
+            continue; // keep alive
         }
 
         while (true)

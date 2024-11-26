@@ -1,147 +1,120 @@
 #include <iostream>
 
-#include <assert.h>
 #include <cstring> // strlen
 #include <unistd.h> // read/write
 #include <sys/socket.h> // Socket functions
 #include <netinet/ip.h> // sockaddr_in struct
 
-const size_t k_max_msg = 4096;
+constexpr size_t LEN_FIELD_SIZE{ 4 };
+constexpr size_t MAX_MSG_FIELD_SIZE{ 16 };
 
-/**
- * @brief reads up to n bytes in the kernel
- *
- * @param fd fd of server
- * @param buf pointer to char arr
- * @param n amount of bytes we want to read
- * @return int32_t 0
- */
-static int32_t read_full(int fd, char* buf, size_t n)
+int32_t read_full(int fd, char* buf, size_t num_to_read)
 {
-    /**
-     * The read() syscall just returns whatever data is available in the kernel, or blocks if there is none.
-     * It’s up to the application to handle insufficient data.
-     * The read_full() function reads from the kernel until it gets exactly n bytes.
-     */
-    while (n > 0)
+    int bytes_read{};
+
+    while (bytes_read < num_to_read)
     {
-        ssize_t rv = read(fd, buf, n);
-
-        if (rv <= 0)
-        {
+        int num_read = read(fd, buf + bytes_read, num_to_read - bytes_read);
+        if (num_read < 0)
             return -1;
-        }
 
-        assert((size_t)rv <= n); // whatever we receive must not be gt or equal to n        
-        n -= (size_t)rv;
-        buf += rv; // increment buffer pointer so that we can receive the next set of bytes 
+        bytes_read += num_read;
     }
     return 0;
 }
 
-/**
- * @brief writes data
- *
- * @param fd fd of server
- * @param buf pointer to char arr
- * @param n amount of bytes we want to write
- * @return int32_t 0
- */
-static int32_t write_all(int fd, const char* buf, size_t n)
+int32_t write_all(int fd, char const* buf, size_t num_to_write)
 {
-    /**
-     * The write() syscall may return successfully with partial data written if the kernel buffer is full,
-     * we must keep trying when the write() returns fewer bytes than we need.
-     */
-    while (n > 0)
+    int bytes_written{};
+
+    while (bytes_written < num_to_write)
     {
-        ssize_t rv = write(fd, buf, n);
-        if (rv <= 0)
-        {
+        int num_written = write(fd, buf + bytes_written, num_to_write - bytes_written);
+        if (num_written < 0)
             return -1;
-        }
-        assert((size_t)rv <= n);
-        n -= (size_t)rv;
-        buf += rv;
+
+        bytes_written += num_written;
     }
     return 0;
 }
 
-static int32_t query(int fd, const char* text)
+int32_t query(int fd, const char* text)
 {
-    uint32_t len = std::strlen(text);
+    auto const query_len = std::strlen(text);
+    if (query_len > MAX_MSG_FIELD_SIZE)
+        return -1;
 
-    if (len > k_max_msg) { return -1; }
+    // Populate the write buffer
+    char wbuf[LEN_FIELD_SIZE + MAX_MSG_FIELD_SIZE];
+    std::memcpy(wbuf, &query_len, LEN_FIELD_SIZE);
+    std::memcpy(&wbuf[LEN_FIELD_SIZE], text, query_len);
 
-    char wbuf[4 + k_max_msg];
-    memcpy(wbuf, &len, 4);
-    memcpy(&wbuf[4], text, len);
+    if (write_all(fd, wbuf, LEN_FIELD_SIZE + query_len))
+    {
+        std::cout << "Failed to write to server\n";
+        return -1;
+    }
 
-    if (int32_t err = write_all(fd, wbuf, 4 + len)) { return err; }
-
-    char rbuf[4 + k_max_msg + 1];
+    char rbuf[LEN_FIELD_SIZE + MAX_MSG_FIELD_SIZE + 1];
     errno = 0;
 
-    int32_t err = read_full(fd, rbuf, 4);
-
+    // Read Length
+    int32_t err = read_full(fd, rbuf, LEN_FIELD_SIZE);
     if (err)
     {
-        if (errno == 0) { std::cout << "EOF\n"; }
-        else { std::cout << "read() error\n"; }
+        if (errno == 0)
+            std::cout << "EOF\n";
+        else
+            std::cout << "read() error\n";
         return err;
     }
 
-    // Header
-    memcpy(&len, rbuf, 4); // assume little endian
-    if (len > k_max_msg) { std::cout << "too long\n"; }
+    uint32_t msg_len{};
+    std::memcpy(&msg_len, rbuf, LEN_FIELD_SIZE);
+    if (msg_len > MAX_MSG_FIELD_SIZE)
+    {
+        std::cout << "too long!\n";
+        return -1;
+    }
 
-    // Body
-    err = read_full(fd, &rbuf[4], len);
-    if (err) { std::cout << "read error\n"; }
+    // Read Contents
+    err = read_full(fd, &rbuf[LEN_FIELD_SIZE], msg_len);
+    if (err)
+    {
+        std::cout << "read error\n";
+        return -1;
+    }
 
-    rbuf[4 + len] = '\0';
+    rbuf[LEN_FIELD_SIZE + msg_len] = '\0';
 
-    std::cout << "server says " << &rbuf[4];
+    // Print output
+    std::cout << "server says " << &rbuf[LEN_FIELD_SIZE];
 
     return 0;
 }
 
-/**
- * @brief How a client works
- *
- * 1. socket() - define communication endpoint
- * 2. connect() - connect socket to an addr specified by a fd
- * 3. write() - send data to server
- * 4. read() - read incoming data from server
- */
 int main()
 {
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (client_fd < 0) { std::cout << "Failed to create socket. errno: " << errno << "\n"; }
+    if (client_fd == -1)
+        std::cout << "Failed to create socket. errno: " << errno << "\n";
 
     struct sockaddr_in server_addr {};
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = ntohs(1234);
-    // INADDR_LOOPBACK means only clients on the same machine can connect to it
     server_addr.sin_addr.s_addr = ntohl(INADDR_LOOPBACK);
 
-    if (connect(client_fd, (const struct sockaddr*)&server_addr, sizeof(server_addr)) != 0)
-    {
+    if (connect(client_fd, (const struct sockaddr*)&server_addr, sizeof(server_addr)))
         std::cout << "Failed to connect to server\n";
-    }
 
-    auto err = query(client_fd, "abcdefghijklmnop");
-    if (err) { close(client_fd); return 0; }
+    auto err = query(client_fd, "short");
+    if (err) { close(client_fd); return 1; }
 
-    err = query(client_fd, "hello1");
-    if (err) { close(client_fd); return 0; }
+    err = query(client_fd, "largequery");
+    if (err) { close(client_fd); return 1; }
 
-    err = query(client_fd, "hello2");
-    if (err) { close(client_fd); return 0; }
-
-    err = query(client_fd, "");
-    if (err) { close(client_fd); return 0; }
+    err = query(client_fd, "extralargequery");
+    if (err) { close(client_fd); return 1; }
 
     return 0;
 }
