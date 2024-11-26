@@ -99,7 +99,6 @@ static int32_t query(int fd, const char* text)
     err = read_full(fd, &rbuf[4], len);
     if (err) { std::cout << "read error\n"; }
 
-    // Some reply
     rbuf[4 + len] = '\0';
 
     std::cout << "server says " << &rbuf[4];
@@ -132,13 +131,16 @@ int main()
         std::cout << "Failed to connect to server\n";
     }
 
-    auto err = query(client_fd, "hello1 \n");
+    auto err = query(client_fd, "abcdefghijklmnop");
     if (err) { close(client_fd); return 0; }
 
-    err = query(client_fd, "hello2 \n");
+    err = query(client_fd, "hello1");
     if (err) { close(client_fd); return 0; }
 
-    err = query(client_fd, "hello3 \n");
+    err = query(client_fd, "hello2");
+    if (err) { close(client_fd); return 0; }
+
+    err = query(client_fd, "");
     if (err) { close(client_fd); return 0; }
 
     return 0;
