@@ -8,6 +8,29 @@
 constexpr size_t LEN_FIELD_SIZE{ 4 };
 constexpr size_t MAX_MSG_FIELD_SIZE{ 16 };
 
+// --------------------------- Socket Handling ---------------------------
+int create_client_socket()
+{
+    int client_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_fd == -1)
+        std::cout << "Failed to create socket. errno: " << errno << "\n";
+    return client_fd;
+}
+
+void connect_to_server(int client_fd)
+{
+    struct sockaddr_in server_addr {};
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = ntohs(1234);
+    server_addr.sin_addr.s_addr = ntohl(INADDR_LOOPBACK);
+
+    if (connect(client_fd, (const struct sockaddr*)&server_addr, sizeof(server_addr)))
+        std::cout << "Failed to connect to server\n";
+}
+
+
+// --------------------------- Protocol Parsing ---------------------------
+
 int32_t read_full(int fd, char* buf, size_t num_to_read)
 {
     int bytes_read{};
@@ -93,19 +116,13 @@ int32_t query(int fd, const char* text)
     return 0;
 }
 
+
 int main()
 {
-    int client_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_fd == -1)
-        std::cout << "Failed to create socket. errno: " << errno << "\n";
+    int client_fd = create_client_socket();
+    if (client_fd == -1) return 1;
 
-    struct sockaddr_in server_addr {};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = ntohs(1234);
-    server_addr.sin_addr.s_addr = ntohl(INADDR_LOOPBACK);
-
-    if (connect(client_fd, (const struct sockaddr*)&server_addr, sizeof(server_addr)))
-        std::cout << "Failed to connect to server\n";
+    connect_to_server(client_fd);
 
     auto err = query(client_fd, "short");
     if (err) { close(client_fd); return 1; }
@@ -115,6 +132,8 @@ int main()
 
     err = query(client_fd, "extralargequery");
     if (err) { close(client_fd); return 1; }
+
+    close(client_fd);
 
     return 0;
 }

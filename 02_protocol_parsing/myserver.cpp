@@ -13,6 +13,46 @@
 constexpr size_t LEN_FIELD_SIZE{ 4 };
 constexpr size_t MAX_MSG_FIELD_SIZE{ 16 };
 
+// --------------------------- Socket Handling ---------------------------
+int create_server_socket()
+{
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd == -1)
+        std::cout << "Failed to create socket. errno: " << errno << "\n";
+
+    return server_fd;
+}
+
+void set_socket_options(int server_fd)
+{
+    int val = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
+}
+
+void bind_socket(int server_fd)
+{
+    struct sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = ntohs(1234);
+    addr.sin_addr.s_addr = ntohl(0);
+
+    if (bind(server_fd, (const sockaddr*)&addr, sizeof(addr)) == -1)
+        std::cout << "Failed to bind a sockaddr to server_fd\n";
+}
+
+int accept_connection(int server_fd)
+{
+    struct sockaddr_in client_addr {};
+    socklen_t socklen{ sizeof(client_addr) };
+    int connfd = accept(server_fd, (struct sockaddr*)&client_addr, &socklen);
+    if (connfd == -1)
+        std::cout << "Connection failed with client addr\n";
+    return connfd;
+}
+
+
+// --------------------------- Protocol Parsing ---------------------------
+
 int32_t read_full(int fd, char* buf, size_t num_to_read)
 {
     int bytes_read{};
@@ -35,8 +75,7 @@ int32_t write_all(int fd, char const* buf, size_t num_to_write)
     while (bytes_written < num_to_write)
     {
         int num_written = write(fd, buf + bytes_written, num_to_write - bytes_written);
-        if (num_written < 0)
-            return -1;
+        if (num_written < 0) return -1;
 
         bytes_written += num_written;
     }
@@ -93,35 +132,18 @@ int32_t one_request(int connfd)
 
 }
 
+
 int main()
 {
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == -1)
-        std::cout << "Failed to create socket. errno: " << errno << "\n";
-
-    int val = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
-
-    struct sockaddr_in addr {};
-    addr.sin_family = AF_INET;
-    addr.sin_port = ntohs(1234);
-    addr.sin_addr.s_addr = ntohl(0);
-
-    if (bind(server_fd, (const sockaddr*)&addr, sizeof(addr)) == -1)
-        std::cout << "Failed to bind a sockaddr to server_fd\n";
-
+    int server_fd = create_server_socket();
+    set_socket_options(server_fd);
+    bind_socket(server_fd);
     listen(server_fd, SOMAXCONN);
 
     while (true)
     {
-        struct sockaddr_in client_addr {};
-        socklen_t socklen{ sizeof(client_addr) };
-        int connfd = accept(server_fd, (struct sockaddr*)&client_addr, &socklen);
-        if (connfd == -1)
-        {
-            std::cout << "Connection failed with client addr\n";
-            continue; // keep alive
-        }
+        int connfd = accept_connection(server_fd);
+        if (connfd == -1) continue; // Keep alive
 
         while (true)
         {
