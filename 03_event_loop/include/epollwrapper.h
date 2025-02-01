@@ -40,14 +40,15 @@ public:
     void remove_conn(int fd) noexcept;
     [[nodiscard]] int wait() noexcept;
 
-    [[nodiscard]] auto get_event(int idx) const->epoll_event const&;
-    [[nodiscard]] auto get_connection(int fd) const->Connection const&;
+    [[nodiscard]] auto get_event(int idx) -> epoll_event&;
+    [[nodiscard]] auto get_connection(int fd) -> Connection&;
 
 private:
     int epoll_fd_;
     uint8_t const max_events_;
 
-    void add_event(int fd) noexcept;
+    void monitor(int fd) noexcept;
+    void unmonitor(int fd) noexcept;
 
     std::unordered_map<int, Connection> connections_;
     std::vector<epoll_event> events_;

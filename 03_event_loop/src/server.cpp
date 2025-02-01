@@ -42,14 +42,14 @@ bool Server::set_nonblocking(int fd)
     return true;
 }
 
-void Server::setup()
+void Server::setup_server()
 {
     try
     {
         create_server_socket();
         set_socket_options();
         bind_socket();
-        set_nonblocking(server_fd_); // set server socket as nonblocking, TODO: Handle bad case
+        set_nonblocking(server_fd_); // set server socket as nonblocking, TODO: Handle fail case
         listen(server_fd_, max_clients_);
     }
     catch (std::runtime_error const& e)
@@ -61,7 +61,7 @@ void Server::setup()
 
 void Server::start()
 {
-    setup();
+    setup_server();
 
     // Add server sock to epoll_
     epoll_.add_conn(server_fd_);
@@ -76,7 +76,7 @@ void Server::start()
         {
             auto& event = epoll_.get_event(i);
             if (event.data.fd == server_fd_)
-                handle_new_connections(server_fd_);
+                handle_new_connections();
 
             if (event.events & EPOLLIN)
                 handle_read_event(event.data.fd);
@@ -90,11 +90,11 @@ void Server::start()
     }
 }
 
-void Server::handle_new_connections(int server_fd)
+void Server::handle_new_connections()
 {
     sockaddr_in client_addr{};
     socklen_t socklen{ sizeof(client_addr) };
-    int client_fd = accept(server_fd, (sockaddr*)&client_addr, &socklen);
+    int client_fd = accept(server_fd_, (sockaddr*)&client_addr, &socklen);
     if (client_fd == -1)
     {
         std::cerr << "Connection failed with client:" << errno << "\n";
@@ -108,8 +108,10 @@ void Server::handle_read_event(int client_fd)
 {
     auto conn = epoll_.get_connection(client_fd);
 
-    std::vector<uint8_t> temp_buffer(2048);
-    size_t bytes_read = read(client_fd, temp_buffer.data(), temp_buffer.size());
+    std::vector<uint8_t> temp_buffer(1024);
+    ssize_t bytes_read = read(client_fd, temp_buffer.data(), temp_buffer.size());
+
+    std::cout << "Read " << bytes_read << " bytes from client " << client_fd << "\n";
 
     if (bytes_read <= 0)
     {
@@ -124,6 +126,7 @@ void Server::handle_read_event(int client_fd)
 
     conn.incoming.insert(conn.incoming.end(), temp_buffer.begin(), temp_buffer.begin() + bytes_read);
 
+    // If there is any data in outgoing buffer, toggle WANT_WRITE flag 
     if (!conn.outgoing.empty())
     {
         conn.flags |= static_cast<uint8_t>(Flags::WANT_WRITE);
@@ -136,14 +139,16 @@ void Server::handle_write_event(int client_fd)
     auto conn = epoll_.get_connection(client_fd);
     if (!conn.outgoing.empty())
     {
-        size_t bytes_written = write(client_fd, conn.outgoing.data(), conn.outgoing.size());
+        ssize_t bytes_written = write(client_fd, conn.outgoing.data(), conn.outgoing.size());
         if (bytes_written < 0)
         {
             std::cerr << "write() error\n";
             conn.flags |= static_cast<uint8_t>(Flags::WANT_CLOSE);
             return;
         }
+
         conn.outgoing.erase(conn.outgoing.begin(), conn.outgoing.begin() + bytes_written);
+
         if (conn.outgoing.empty())
         {
             conn.flags |= static_cast<uint8_t>(Flags::WANT_READ);

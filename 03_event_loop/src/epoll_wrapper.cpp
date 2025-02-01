@@ -20,15 +20,18 @@ EpollWrapper::~EpollWrapper()
 
 void EpollWrapper::add_conn(int fd) noexcept
 {
+    if (connections_.find(fd) != connections_.end())
+        return;
+
     Connection conn{};
     conn.fd = fd;
     conn.flags |= static_cast<uint8_t>(Flags::WANT_READ);
     connections_[fd] = conn;
 
-    add_event(fd);
+    monitor(fd);
 }
 
-void EpollWrapper::add_event(int fd) noexcept
+void EpollWrapper::monitor(int fd) noexcept
 {
     epoll_event event{};
     event.events = EPOLLIN;
@@ -40,10 +43,14 @@ void EpollWrapper::add_event(int fd) noexcept
 
 void EpollWrapper::remove_conn(int fd) noexcept
 {
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) == -1)
-        std::cerr << "Failed to remove fd " << fd << " from epoll. errno: " << errno << "\n";
-
     connections_.erase(fd);
+    unmonitor(fd);
+}
+
+void EpollWrapper::unmonitor(int fd) noexcept
+{
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr))
+        std::cerr << "Failed to remove fd " << fd << " from epoll. errno: " << errno << "\n";
 }
 
 [[nodiscard]] int EpollWrapper::wait() noexcept
@@ -53,12 +60,12 @@ void EpollWrapper::remove_conn(int fd) noexcept
     return event_count;
 }
 
-[[nodiscard]] auto EpollWrapper::get_event(int idx) const->epoll_event const&
+[[nodiscard]] auto EpollWrapper::get_event(int idx)->epoll_event&
 {
     return events_.at(idx);
 }
 
-[[nodiscard]] auto EpollWrapper::get_connection(int fd) const->Connection const&
+[[nodiscard]] auto EpollWrapper::get_connection(int fd)->Connection&
 {
     auto it = connections_.find(fd);
     if (it == connections_.end())

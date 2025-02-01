@@ -37,13 +37,13 @@ private:
 
     EpollWrapper epoll_;
 
-    void setup();
     void create_server_socket();
     void set_socket_options();
     void bind_socket();
     bool set_nonblocking(int fd);
+    void setup_server();
 
-    void handle_new_connections(int server_fd);
+    void handle_new_connections();
     void handle_read_event(int client_fd);
     void handle_write_event(int client_fd);
     void handle_close_event(int client_fd);
