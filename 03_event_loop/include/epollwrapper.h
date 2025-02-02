@@ -14,7 +14,6 @@ enum class Flags : uint8_t
 {
     WANT_READ = 1 << 0,
     WANT_WRITE = 1 << 1,
-    WANT_CLOSE = 1 << 2
 };
 
 struct Connection
@@ -38,6 +37,7 @@ public:
 
     void add_conn(int fd) noexcept;
     void remove_conn(int fd) noexcept;
+    void modify_conn(int fd, uint32_t event_flags) noexcept;
     [[nodiscard]] int wait() noexcept;
 
     [[nodiscard]] auto get_event(int idx) -> epoll_event&;

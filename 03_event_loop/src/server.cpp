@@ -9,8 +9,8 @@ void Server::create_server_socket()
 
 void Server::set_socket_options()
 {
-    int val = 1;
-    setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
+    int opt = 1;
+    setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 }
 
 void Server::bind_socket()
@@ -30,13 +30,13 @@ bool Server::set_nonblocking(int fd)
     int flags = fcntl(fd, F_GETFL);
     if (flags == -1)
     {
-        std::cerr << "Failed to GET fcntl():" << errno << "\n";
+        std::cerr << "Failed to GET fcntl():" << std::strerror(errno) << "\n";
         return false;
     }
 
     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
     {
-        std::cerr << "Failed to SET fcntl():" << errno << "\n";
+        std::cerr << "Failed to SET fcntl():" << std::strerror(errno) << "\n";
         return false;
     }
     return true;
@@ -49,13 +49,15 @@ void Server::setup_server()
         create_server_socket();
         set_socket_options();
         bind_socket();
-        set_nonblocking(server_fd_); // set server socket as nonblocking, TODO: Handle fail case
+        if (!set_nonblocking(server_fd_))
+            throw std::runtime_error("Failed to set server socket as nonblocking");
         listen(server_fd_, max_clients_);
     }
     catch (std::runtime_error const& e)
     {
         std::cerr << e.what() << std::endl;
         close(server_fd_);
+        throw;
     }
 }
 
@@ -72,99 +74,138 @@ void Server::start()
     {
         int num_events = epoll_.wait();
 
+
         for (int i = 0; i < num_events; i++)
         {
             auto& event = epoll_.get_event(i);
+
             if (event.data.fd == server_fd_)
                 handle_new_connections();
 
-            if (event.events & EPOLLIN)
+            if (event.data.fd != server_fd_ && event.events & EPOLLIN)
                 handle_read_event(event.data.fd);
 
-            if (event.events & EPOLLOUT)
+            if (event.data.fd != server_fd_ && event.events & EPOLLOUT)
                 handle_write_event(event.data.fd);
 
-            if (event.events & EPOLLERR || event.events & EPOLLHUP)
+            if (event.data.fd != server_fd_ && (event.events & EPOLLERR || event.events & EPOLLHUP))
                 handle_close_event(event.data.fd);
+
+            std::cout << "=========================================================" << "\n";
         }
     }
 }
 
+/* ============================================== New Conn ============================================== */
 void Server::handle_new_connections()
 {
     sockaddr_in client_addr{};
     socklen_t socklen{ sizeof(client_addr) };
     int client_fd = accept(server_fd_, (sockaddr*)&client_addr, &socklen);
-    if (client_fd == -1)
-    {
-        std::cerr << "Connection failed with client:" << errno << "\n";
+
+    if (client_fd == -1) {
+        std::cerr << "[ERROR] Connection failed with client: " << std::strerror(errno) << "\n";
+        return;
     }
 
-    set_nonblocking(client_fd);
+    std::cout << "[INFO] New client connected: " << client_fd << "\n";
+
+    if (!set_nonblocking(client_fd)) {
+        std::cerr << "[ERROR] Failed to set client socket as non-blocking: " << std::strerror(errno) << "\n";
+        close(client_fd);
+        return;
+    }
     epoll_.add_conn(client_fd);
 }
 
+/* ============================================== READ ============================================== */
 void Server::handle_read_event(int client_fd)
 {
-    auto conn = epoll_.get_connection(client_fd);
+    auto& conn = epoll_.get_connection(client_fd);
 
     std::vector<uint8_t> temp_buffer(1024);
     ssize_t bytes_read = read(client_fd, temp_buffer.data(), temp_buffer.size());
 
-    std::cout << "Read " << bytes_read << " bytes from client " << client_fd << "\n";
-
-    if (bytes_read <= 0)
+    if (bytes_read == 0)
     {
-        if (bytes_read == 0)
-            std::cout << "Client " << client_fd << " disconnected.\n";
-        else
-            std::cerr << "read() error\n";
+        std::cout << "[DISCONNECT] Client " << client_fd << " disconnected.\n";
+        handle_close_event(client_fd);
+        return;
+    }
 
-        conn.flags |= static_cast<uint8_t>(Flags::WANT_CLOSE);
+    if (bytes_read < 0)
+    {
+        // std::cerr << "[ERROR] Read error from client " << client_fd << ", errno: " << std::strerror(errno) << "\n";
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            std::cerr << "[ERROR] Nonblocking client " << client_fd << " has no data to be read, errno: " << std::strerror(errno) << "\n";
         return;
     }
 
     conn.incoming.insert(conn.incoming.end(), temp_buffer.begin(), temp_buffer.begin() + bytes_read);
 
-    // If there is any data in outgoing buffer, toggle WANT_WRITE flag 
-    if (!conn.outgoing.empty())
-    {
-        conn.flags |= static_cast<uint8_t>(Flags::WANT_WRITE);
-        conn.flags &= ~static_cast<uint8_t>(Flags::WANT_READ);
+    // ECHO SERVER BEHAVIOUR
+    conn.outgoing.insert(conn.outgoing.end(), conn.incoming.begin(), conn.incoming.end());
+    conn.incoming.clear();
+
+    if (!conn.outgoing.empty()) {
+        std::cout << "[MODIFY] Client " << client_fd << " -> Enabling EPOLLOUT\n";
+        epoll_.modify_conn(client_fd, EPOLLOUT);
+        handle_write_event(client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
     }
 }
 
+
+/* ============================================== Write ============================================== */
 void Server::handle_write_event(int client_fd)
 {
-    auto conn = epoll_.get_connection(client_fd);
-    if (!conn.outgoing.empty())
-    {
-        ssize_t bytes_written = write(client_fd, conn.outgoing.data(), conn.outgoing.size());
-        if (bytes_written < 0)
-        {
-            std::cerr << "write() error\n";
-            conn.flags |= static_cast<uint8_t>(Flags::WANT_CLOSE);
+    auto& conn = epoll_.get_connection(client_fd);
+
+    if (conn.outgoing.empty()) {
+        std::cout << "[WRITE] Client " << client_fd << " -> No data to send, switching to EPOLLIN\n";
+        epoll_.modify_conn(client_fd, EPOLLIN);
+        return;
+    }
+
+    ssize_t bytes_written = write(client_fd, conn.outgoing.data(), conn.outgoing.size());
+
+    if (bytes_written < 0) {
+        std::cerr << "[ERROR] Write error to client " << client_fd << ", errno: " << std::strerror(errno) << "\n";
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
             return;
-        }
+        handle_close_event(client_fd);
+        return;
+    }
 
-        conn.outgoing.erase(conn.outgoing.begin(), conn.outgoing.begin() + bytes_written);
+    std::cout << "[WRITE] Client " << client_fd << " -> Wrote " << bytes_written << " bytes\n";
+    conn.outgoing.erase(conn.outgoing.begin(), conn.outgoing.begin() + bytes_written);
 
-        if (conn.outgoing.empty())
-        {
-            conn.flags |= static_cast<uint8_t>(Flags::WANT_READ);
-            conn.flags &= ~static_cast<uint8_t>(Flags::WANT_WRITE);
-        }
+    if (conn.outgoing.empty()) {
+        std::cout << "[MODIFY] Client " << client_fd << " -> No more data, switching to EPOLLIN\n";
+        epoll_.modify_conn(client_fd, EPOLLIN);
+    }
+    else {
+        std::cout << "[MODIFY] Client " << client_fd << " -> Still data to send, keeping EPOLLOUT\n";
+        epoll_.modify_conn(client_fd, EPOLLOUT);
     }
 }
 
+/* ============================================== Close ============================================== */
 void Server::handle_close_event(int client_fd)
 {
-    auto conn = epoll_.get_connection(client_fd);
-    if (conn.flags & static_cast<uint8_t>(Flags::WANT_CLOSE))
-    {
-        close(client_fd);
-        epoll_.remove_conn(client_fd);
-    }
+    // std::cout << "[CLOSE] Closing connection for client " << client_fd << "\n";
+
+    // if (fcntl(client_fd, F_GETFL) == -1 && errno == EBADF)
+    // {
+    //     std::cerr << "[ERROR] Trying to close an invalid fd: " << client_fd << "\n";
+    //     return;
+    // }
+    epoll_.remove_conn(client_fd);
+    std::cout << "[CLOSE] Successfully removed client " << client_fd << " from epoll\n";
+
+    if (close(client_fd) == -1)
+        std::cerr << "[ERROR] Failed to close client socket " << client_fd << ": " << std::strerror(errno) << "\n";
+    else
+        std::cout << "[CLOSE] Successfully closed client " << client_fd << "\n";
 }
 
 

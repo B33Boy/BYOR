@@ -43,6 +43,9 @@ void EpollWrapper::monitor(int fd) noexcept
 
 void EpollWrapper::remove_conn(int fd) noexcept
 {
+    if (connections_.find(fd) == connections_.end())
+        return;
+
     connections_.erase(fd);
     unmonitor(fd);
 }
@@ -51,6 +54,15 @@ void EpollWrapper::unmonitor(int fd) noexcept
 {
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr))
         std::cerr << "Failed to remove fd " << fd << " from epoll. errno: " << errno << "\n";
+}
+
+void EpollWrapper::modify_conn(int fd, uint32_t event_flags) noexcept
+{
+    epoll_event event{};
+    event.events = event_flags;
+    event.data.fd = fd;
+
+    epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &event);
 }
 
 [[nodiscard]] int EpollWrapper::wait() noexcept
@@ -70,6 +82,6 @@ void EpollWrapper::unmonitor(int fd) noexcept
     auto it = connections_.find(fd);
     if (it == connections_.end())
         throw std::out_of_range("Connection not found");
-
+    // std::cerr << "Connection not found\n";
     return it->second;
 }
