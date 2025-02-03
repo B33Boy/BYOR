@@ -35,20 +35,20 @@ public:
     EpollWrapper& operator=(EpollWrapper const& other) = delete;
     EpollWrapper& operator=(EpollWrapper&& other) = delete;
 
-    void add_conn(int fd) noexcept;
-    void remove_conn(int fd) noexcept;
-    void modify_conn(int fd, uint32_t event_flags) noexcept;
+    void add_conn(int const fd) noexcept;
+    void remove_conn(int const fd) noexcept;
+    void modify_conn(int const fd, uint32_t const event_flags) const noexcept;
     [[nodiscard]] int wait() noexcept;
 
-    [[nodiscard]] auto get_event(int idx) -> epoll_event&;
-    [[nodiscard]] auto get_connection(int fd) -> Connection&;
+    [[nodiscard]] auto get_event(int const idx) -> epoll_event&;
+    [[nodiscard]] auto get_connection(int const fd) -> Connection&;
 
 private:
     int epoll_fd_;
     uint8_t const max_events_;
 
-    void monitor(int fd) noexcept;
-    void unmonitor(int fd) noexcept;
+    void monitor(int fd) const noexcept;
+    void unmonitor(int fd) const noexcept;
 
     std::unordered_map<int, Connection> connections_;
     std::vector<epoll_event> events_;

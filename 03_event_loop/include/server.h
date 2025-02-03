@@ -18,7 +18,7 @@
 class Server
 {
 private:
-    static constexpr uint8_t DEFAULT_MAX_CLIENTS{ 10 };
+    static constexpr uint8_t DEFAULT_MAX_CLIENTS{ 100 };
 
 public:
     Server(uint16_t  port, uint8_t max_clients = DEFAULT_MAX_CLIENTS) : server_fd_(-1), port_(port), max_clients_(max_clients), epoll_(max_clients_) {}
@@ -39,15 +39,18 @@ private:
     EpollWrapper epoll_;
 
     void create_server_socket();
-    void set_socket_options();
-    void bind_socket();
-    bool set_nonblocking(int fd);
+    void set_socket_options() const noexcept;
+    void bind_socket() const;
+    bool set_nonblocking(int const fd) const noexcept;
     void setup_server();
 
-    void handle_new_connections();
-    void handle_read_event(int client_fd);
-    void handle_write_event(int client_fd);
-    void handle_close_event(int client_fd);
+    int read_full(int const fd, std::vector<uint8_t>& buf, size_t const num_to_read);
+    int write_all(int fd, std::vector<uint8_t>& buf, size_t num_to_write);
+
+    void handle_new_connections() noexcept;
+    void handle_read_event(int const client_fd);
+    void handle_write_event(int const client_fd);
+    void handle_close_event(int const client_fd);
 };
 
 #endif

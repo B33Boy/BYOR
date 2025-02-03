@@ -18,7 +18,7 @@ EpollWrapper::~EpollWrapper()
         std::cerr << "Failed to close epoll fd. errno: " << errno << "\n";
 };
 
-void EpollWrapper::add_conn(int fd) noexcept
+void EpollWrapper::add_conn(int const fd) noexcept
 {
     if (connections_.find(fd) != connections_.end())
         return;
@@ -31,7 +31,7 @@ void EpollWrapper::add_conn(int fd) noexcept
     monitor(fd);
 }
 
-void EpollWrapper::monitor(int fd) noexcept
+void EpollWrapper::monitor(int const fd) const noexcept
 {
     epoll_event event{};
     event.events = EPOLLIN;
@@ -41,7 +41,7 @@ void EpollWrapper::monitor(int fd) noexcept
         std::cerr << "Failed to add fd " << fd << " to epoll. errno: " << errno << "\n";
 }
 
-void EpollWrapper::remove_conn(int fd) noexcept
+void EpollWrapper::remove_conn(int const fd) noexcept
 {
     if (connections_.find(fd) == connections_.end())
         return;
@@ -50,13 +50,13 @@ void EpollWrapper::remove_conn(int fd) noexcept
     unmonitor(fd);
 }
 
-void EpollWrapper::unmonitor(int fd) noexcept
+void EpollWrapper::unmonitor(int const fd) const noexcept
 {
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr))
         std::cerr << "Failed to remove fd " << fd << " from epoll. errno: " << errno << "\n";
 }
 
-void EpollWrapper::modify_conn(int fd, uint32_t event_flags) noexcept
+void EpollWrapper::modify_conn(int const fd, uint32_t const event_flags) const noexcept
 {
     epoll_event event{};
     event.events = event_flags;
@@ -72,12 +72,12 @@ void EpollWrapper::modify_conn(int fd, uint32_t event_flags) noexcept
     return event_count;
 }
 
-[[nodiscard]] auto EpollWrapper::get_event(int idx)->epoll_event&
+[[nodiscard]] auto EpollWrapper::get_event(int const idx)->epoll_event&
 {
     return events_.at(idx);
 }
 
-[[nodiscard]] auto EpollWrapper::get_connection(int fd)->Connection&
+[[nodiscard]] auto EpollWrapper::get_connection(int const fd)->Connection&
 {
     auto it = connections_.find(fd);
     if (it == connections_.end())

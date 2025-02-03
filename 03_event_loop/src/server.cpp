@@ -7,13 +7,13 @@ void Server::create_server_socket()
         throw std::runtime_error("Failed to create socket");
 }
 
-void Server::set_socket_options()
+void Server::set_socket_options() const noexcept
 {
     int opt = 1;
     setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 }
 
-void Server::bind_socket()
+void Server::bind_socket() const
 {
     struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
@@ -25,7 +25,7 @@ void Server::bind_socket()
         throw std::runtime_error("Failed to bind a sockaddr to server_fd");
 }
 
-bool Server::set_nonblocking(int fd)
+bool Server::set_nonblocking(int const fd) const noexcept
 {
     int flags = fcntl(fd, F_GETFL);
     if (flags == -1)
@@ -97,7 +97,7 @@ void Server::start()
 }
 
 /* ============================================== New Conn ============================================== */
-void Server::handle_new_connections()
+void Server::handle_new_connections() noexcept
 {
     sockaddr_in client_addr{};
     socklen_t socklen{ sizeof(client_addr) };
@@ -119,7 +119,7 @@ void Server::handle_new_connections()
 }
 
 /* ============================================== READ ============================================== */
-void Server::handle_read_event(int client_fd)
+void Server::handle_read_event(int const client_fd)
 {
     auto& conn = epoll_.get_connection(client_fd);
 
@@ -157,7 +157,7 @@ void Server::handle_read_event(int client_fd)
 
 
 /* ============================================== Write ============================================== */
-void Server::handle_write_event(int client_fd)
+void Server::handle_write_event(int const client_fd)
 {
     auto& conn = epoll_.get_connection(client_fd);
 
@@ -188,6 +188,36 @@ void Server::handle_write_event(int client_fd)
         std::cout << "[MODIFY] Client " << client_fd << " -> Still data to send, keeping EPOLLOUT\n";
         epoll_.modify_conn(client_fd, EPOLLOUT);
     }
+}
+
+int Server::read_full(int const fd, std::vector<uint8_t>& buf, size_t const num_to_read)
+{
+    int bytes_read{};
+
+    while (bytes_read < num_to_read)
+    {
+        int num_read = read(fd, buf.data() + bytes_read, num_to_read - bytes_read);
+        if (num_read < 0)
+            return -1;
+
+        bytes_read += num_read;
+    }
+    return 0;
+}
+
+int Server::write_all(int fd, std::vector<uint8_t>& buf, size_t num_to_write)
+{
+    int bytes_written{};
+
+    while (bytes_written < num_to_write)
+    {
+        int num_written = write(fd, buf.data() + bytes_written, num_to_write - bytes_written);
+        if (num_written < 0)
+            return -1;
+
+        bytes_written += num_written;
+    }
+    return 0;
 }
 
 /* ============================================== Close ============================================== */
