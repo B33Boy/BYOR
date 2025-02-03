@@ -142,6 +142,7 @@ void Server::handle_read_event(int client_fd)
     }
 
     conn.incoming.insert(conn.incoming.end(), temp_buffer.begin(), temp_buffer.begin() + bytes_read);
+    std::cout << "[READ] Client " << client_fd << " -> Reading " << bytes_read << " bytes\n";
 
     // ECHO SERVER BEHAVIOUR
     conn.outgoing.insert(conn.outgoing.end(), conn.incoming.begin(), conn.incoming.end());
@@ -180,7 +181,7 @@ void Server::handle_write_event(int client_fd)
     conn.outgoing.erase(conn.outgoing.begin(), conn.outgoing.begin() + bytes_written);
 
     if (conn.outgoing.empty()) {
-        std::cout << "[MODIFY] Client " << client_fd << " -> No more data, switching to EPOLLIN\n";
+        std::cout << "[MODIFY] Client " << client_fd << " -> No more data to read, switching to EPOLLIN\n";
         epoll_.modify_conn(client_fd, EPOLLIN);
     }
     else {
@@ -192,13 +193,6 @@ void Server::handle_write_event(int client_fd)
 /* ============================================== Close ============================================== */
 void Server::handle_close_event(int client_fd)
 {
-    // std::cout << "[CLOSE] Closing connection for client " << client_fd << "\n";
-
-    // if (fcntl(client_fd, F_GETFL) == -1 && errno == EBADF)
-    // {
-    //     std::cerr << "[ERROR] Trying to close an invalid fd: " << client_fd << "\n";
-    //     return;
-    // }
     epoll_.remove_conn(client_fd);
     std::cout << "[CLOSE] Successfully removed client " << client_fd << " from epoll\n";
 
@@ -206,6 +200,7 @@ void Server::handle_close_event(int client_fd)
         std::cerr << "[ERROR] Failed to close client socket " << client_fd << ": " << std::strerror(errno) << "\n";
     else
         std::cout << "[CLOSE] Successfully closed client " << client_fd << "\n";
+
 }
 
 

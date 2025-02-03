@@ -16,11 +16,6 @@ int main() {
     int opt = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    struct linger so_linger;
-    so_linger.l_onoff = 1;  // Enable linger option
-    so_linger.l_linger = 0; // Close immediately
-    setsockopt(sock, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
-
     // Define server address
     sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;
