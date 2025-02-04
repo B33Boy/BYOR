@@ -19,6 +19,9 @@ class Server
 {
 private:
     static constexpr uint8_t DEFAULT_MAX_CLIENTS{ 100 };
+    static constexpr uint8_t LEN_FIELD_SIZE{ 4 };
+    static constexpr size_t MAX_MSG_FIELD_SIZE{ 32 << 20 }; // 32 MB, max valid size of a message
+    static constexpr size_t READ_BUFFER_SIZE{ 64 * 1024 }; // 64 KB, max size for single read operations
 
 public:
     Server(uint16_t  port, uint8_t max_clients = DEFAULT_MAX_CLIENTS) : server_fd_(-1), port_(port), max_clients_(max_clients), epoll_(max_clients_) {}
@@ -44,11 +47,9 @@ private:
     bool set_nonblocking(int const fd) const noexcept;
     void setup_server();
 
-    int read_full(int const fd, std::vector<uint8_t>& buf, size_t const num_to_read);
-    int write_all(int fd, std::vector<uint8_t>& buf, size_t num_to_write);
-
     void handle_new_connections() noexcept;
     void handle_read_event(int const client_fd);
+    bool try_request(Connection& conn) noexcept;
     void handle_write_event(int const client_fd);
     void handle_close_event(int const client_fd);
 };

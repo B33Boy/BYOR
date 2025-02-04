@@ -123,8 +123,9 @@ void Server::handle_read_event(int const client_fd)
 {
     auto& conn = epoll_.get_connection(client_fd);
 
-    std::vector<uint8_t> temp_buffer(1024);
-    ssize_t bytes_read = read(client_fd, temp_buffer.data(), temp_buffer.size());
+    // 1. Do a non-blocking read
+    std::vector<uint8_t> buf(READ_BUFFER_SIZE);
+    ssize_t bytes_read = read(client_fd, buf.data(), buf.size());
 
     if (bytes_read == 0)
     {
@@ -135,24 +136,66 @@ void Server::handle_read_event(int const client_fd)
 
     if (bytes_read < 0)
     {
-        // std::cerr << "[ERROR] Read error from client " << client_fd << ", errno: " << std::strerror(errno) << "\n";
         if (errno == EAGAIN || errno == EWOULDBLOCK)
-            std::cerr << "[ERROR] Nonblocking client " << client_fd << " has no data to be read, errno: " << std::strerror(errno) << "\n";
+            std::cerr << "[READ] Client " << client_fd << "-> No data available (non-blocking read), errno: " << std::strerror(errno) << "\n";
         return;
     }
 
-    conn.incoming.insert(conn.incoming.end(), temp_buffer.begin(), temp_buffer.begin() + bytes_read);
+    // 2. Add new data to the `Conn::incoming` buffer
+    conn.incoming.insert(conn.incoming.end(), buf.begin(), buf.begin() + bytes_read);
     std::cout << "[READ] Client " << client_fd << " -> Reading " << bytes_read << " bytes\n";
 
-    // ECHO SERVER BEHAVIOUR
-    conn.outgoing.insert(conn.outgoing.end(), conn.incoming.begin(), conn.incoming.end());
-    conn.incoming.clear();
+    // 3. Parse requests and generate responses
+    while (try_request(conn)) {}
 
+    // 4. Remove the message from `Conn::incoming`
     if (!conn.outgoing.empty()) {
-        std::cout << "[MODIFY] Client " << client_fd << " -> Enabling EPOLLOUT\n";
+        std::cout << "[MODIFY] Client " << client_fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
         epoll_.modify_conn(client_fd, EPOLLOUT);
         handle_write_event(client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
     }
+}
+
+bool Server::try_request(Connection& conn) noexcept
+{
+    if (conn.incoming.size() < LEN_FIELD_SIZE)
+    {
+        std::cout << "[ERROR] Client " << conn.fd << " -> No more bytes to be read\n";
+        return false;
+    }
+
+    uint32_t data_len{};
+    std::memcpy(&data_len, conn.incoming.data(), LEN_FIELD_SIZE);
+
+    if (data_len > MAX_MSG_FIELD_SIZE)
+    {
+        std::cerr << "[ERROR] Client " << conn.fd << " -> given data_length greater than MAX_MSG_FIELD_SIZE, closing connection\n";
+        handle_close_event(conn.fd); // TODO: NEED TO HANDLE SEGFAULT WHEN FUNCTION RETURNS and we try to access conn.fd
+        return false;
+    }
+
+    if (LEN_FIELD_SIZE + data_len > conn.incoming.size())
+    {
+        std::cout << "Client" << conn.fd << " -> Less incoming bytes than specified in data_len \n";
+        return false;
+    }
+
+    auto request = conn.incoming.data() + LEN_FIELD_SIZE;
+    // std::cout << "[SERVE] Client" << conn.fd << " -> Request: " << std::string_view{ reinterpret_cast<char const*>(request), data_len } << "\n";
+    // Validate memory before creating string_view
+    if (request == nullptr || data_len > conn.incoming.size() - LEN_FIELD_SIZE)
+    {
+        std::cerr << "[ERROR] Client " << conn.fd << " -> Invalid request pointer or length.\n";
+        return false;
+    }
+    std::cout << "[SERVE] Client " << conn.fd << " -> Request: " << std::string_view{ reinterpret_cast<char const*>(request), data_len } << "\n";
+
+    conn.outgoing.insert(conn.outgoing.end(), conn.incoming.begin(), conn.incoming.begin() + LEN_FIELD_SIZE); // Add the length field
+    conn.outgoing.insert(conn.outgoing.end(), request, request + data_len); // Add the data field
+
+    conn.incoming.erase(conn.incoming.begin(), conn.incoming.begin() + LEN_FIELD_SIZE + data_len);
+
+    return true;
 }
 
 
@@ -190,35 +233,6 @@ void Server::handle_write_event(int const client_fd)
     }
 }
 
-int Server::read_full(int const fd, std::vector<uint8_t>& buf, size_t const num_to_read)
-{
-    int bytes_read{};
-
-    while (bytes_read < num_to_read)
-    {
-        int num_read = read(fd, buf.data() + bytes_read, num_to_read - bytes_read);
-        if (num_read < 0)
-            return -1;
-
-        bytes_read += num_read;
-    }
-    return 0;
-}
-
-int Server::write_all(int fd, std::vector<uint8_t>& buf, size_t num_to_write)
-{
-    int bytes_written{};
-
-    while (bytes_written < num_to_write)
-    {
-        int num_written = write(fd, buf.data() + bytes_written, num_to_write - bytes_written);
-        if (num_written < 0)
-            return -1;
-
-        bytes_written += num_written;
-    }
-    return 0;
-}
 
 /* ============================================== Close ============================================== */
 void Server::handle_close_event(int client_fd)
