@@ -24,7 +24,22 @@ struct Connection
     std::vector<uint8_t> outgoing{};
 };
 
-class EpollWrapper
+class IEpollWrapper
+{
+public:
+    virtual ~IEpollWrapper() = default;
+
+    virtual void add_conn(int const fd) noexcept = 0;
+    virtual void remove_conn(int const fd) noexcept = 0;
+    virtual void modify_conn(int const fd, uint32_t const event_flags) const noexcept = 0;
+    virtual int wait() noexcept = 0;
+
+    virtual epoll_event& get_event(int idx) = 0;
+    virtual Connection& get_connection(int fd) = 0;
+};
+
+
+class EpollWrapper : public IEpollWrapper
 {
 public:
     EpollWrapper(uint8_t max_events);
@@ -35,13 +50,13 @@ public:
     EpollWrapper& operator=(EpollWrapper const& other) = delete;
     EpollWrapper& operator=(EpollWrapper&& other) = delete;
 
-    void add_conn(int const fd) noexcept;
-    void remove_conn(int const fd) noexcept;
-    void modify_conn(int const fd, uint32_t const event_flags) const noexcept;
-    [[nodiscard]] int wait() noexcept;
+    void add_conn(int const fd) noexcept override;
+    void remove_conn(int const fd) noexcept override;
+    void modify_conn(int const fd, uint32_t const event_flags) const noexcept override;
+    [[nodiscard]] int wait() noexcept override;
 
-    [[nodiscard]] auto get_event(int const idx) -> epoll_event&;
-    [[nodiscard]] auto get_connection(int const fd) -> Connection&;
+    [[nodiscard]] epoll_event& get_event(int const idx) override;
+    [[nodiscard]] Connection& get_connection(int const fd) override;
 
 private:
     int epoll_fd_;
