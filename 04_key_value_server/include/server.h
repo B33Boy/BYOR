@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <map>
+#include <memory>
 
 #include <arpa/inet.h>  // ntohs(), ntohl()
 #include <fcntl.h>      // F_GETFL, F_SETFL, O_NONBLOCK
@@ -39,7 +40,15 @@ private:
     static constexpr size_t MAX_CMD_ARGS = 200 * 1000;
 
 public:
-    Server(uint16_t  port, uint8_t max_clients = DEFAULT_MAX_CLIENTS) : server_fd_(-1), port_(port), max_clients_(max_clients), epoll_(max_clients_) {}
+    Server(uint16_t port, std::unique_ptr<IEpollWrapper> epoll = nullptr, uint8_t max_clients = DEFAULT_MAX_CLIENTS) :
+        server_fd_(-1),
+        port_(port),
+        epoll_(std::move(epoll)),
+        max_clients_(max_clients)
+    {
+        if (!epoll_)
+            epoll_ = std::make_unique<EpollWrapper>(max_clients_);
+    }
 
     ~Server() = default;
     Server(Server const& other) = delete;
@@ -48,14 +57,16 @@ public:
     Server& operator=(Server&& other) = delete;
 
     void start();
+    void stop() noexcept;
 
 private:
     int server_fd_;
     uint16_t const port_;
     uint8_t const max_clients_;
 
-    EpollWrapper epoll_;
+    bool running_{ true };
 
+    std::unique_ptr<IEpollWrapper> epoll_;
     std::map<std::string, std::string> g_data;
 
     void create_server_socket();

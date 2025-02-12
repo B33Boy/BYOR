@@ -66,18 +66,18 @@ void Server::start()
     setup_server();
 
     // Add server sock to epoll_
-    epoll_.add_conn(server_fd_);
+    epoll_->add_conn(server_fd_);
 
     std::cout << "Created Server, now listening on port: " << port_ << "\n";
 
-    while (true)
+    while (running_)
     {
-        int num_events = epoll_.wait();
+        int num_events = epoll_->wait();
 
 
         for (int i = 0; i < num_events; i++)
         {
-            auto& event = epoll_.get_event(i);
+            auto& event = epoll_->get_event(i);
 
             if (event.data.fd == server_fd_)
                 handle_new_connections();
@@ -94,6 +94,11 @@ void Server::start()
             std::cout << "=========================================================" << "\n";
         }
     }
+}
+
+void Server::stop() noexcept
+{
+    running_ = false;
 }
 
 /* ============================================== New Conn ============================================== */
@@ -115,13 +120,13 @@ void Server::handle_new_connections() noexcept
         close(client_fd);
         return;
     }
-    epoll_.add_conn(client_fd);
+    epoll_->add_conn(client_fd);
 }
 
 /* ============================================== READ ============================================== */
 void Server::handle_read_event(int const client_fd)
 {
-    auto& conn = epoll_.get_connection(client_fd);
+    auto& conn = epoll_->get_connection(client_fd);
 
     // 1. Do a non-blocking read
     std::vector<uint8_t> buf(READ_BUFFER_SIZE);
@@ -151,11 +156,12 @@ void Server::handle_read_event(int const client_fd)
     // 4. Remove the message from `Conn::incoming`
     if (!conn.outgoing.empty()) {
         std::cout << "[MODIFY] Client " << client_fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
-        epoll_.modify_conn(client_fd, EPOLLOUT);
+        epoll_->modify_conn(client_fd, EPOLLOUT);
         handle_write_event(client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
     }
 }
 
+/* ============================================== Handle Request ============================================== */
 bool Server::try_request(Connection& conn) noexcept
 {
     if (conn.incoming.size() < LEN_FIELD_SIZE)
@@ -201,16 +207,7 @@ bool Server::try_request(Connection& conn) noexcept
 
     conn.incoming.erase(conn.incoming.begin(), conn.incoming.begin() + LEN_FIELD_SIZE + data_len);
 
-    // if (resp.status == ResponseStatus::RES_NX)
-    // {
-    //     std::cout << "[ERROR] Key not found!\n";
-    //     return false;
-    // }
-
     make_response(resp, conn.outgoing);
-    // std::cout << "RESPONSE: \n";
-    // for (auto const& c : conn.outgoing)
-    //     std::cout << static_cast<int>(c) << "|";
 
     return true;
 }
@@ -332,11 +329,11 @@ void Server::make_response(Response& resp, std::vector<uint8_t>& out)
 /* ============================================== Write ============================================== */
 void Server::handle_write_event(int const client_fd)
 {
-    auto& conn = epoll_.get_connection(client_fd);
+    auto& conn = epoll_->get_connection(client_fd);
 
     if (conn.outgoing.empty()) {
         std::cout << "[WRITE] Client " << client_fd << " -> No data to send, switching to EPOLLIN\n";
-        epoll_.modify_conn(client_fd, EPOLLIN);
+        epoll_->modify_conn(client_fd, EPOLLIN);
         return;
     }
 
@@ -355,11 +352,11 @@ void Server::handle_write_event(int const client_fd)
 
     if (conn.outgoing.empty()) {
         std::cout << "[MODIFY] Client " << client_fd << " -> No more data to read, switching to EPOLLIN\n";
-        epoll_.modify_conn(client_fd, EPOLLIN);
+        epoll_->modify_conn(client_fd, EPOLLIN);
     }
     else {
         std::cout << "[MODIFY] Client " << client_fd << " -> Still data to send, keeping EPOLLOUT\n";
-        epoll_.modify_conn(client_fd, EPOLLOUT);
+        epoll_->modify_conn(client_fd, EPOLLOUT);
     }
 }
 
@@ -367,7 +364,7 @@ void Server::handle_write_event(int const client_fd)
 /* ============================================== Close ============================================== */
 void Server::handle_close_event(int client_fd)
 {
-    epoll_.remove_conn(client_fd);
+    epoll_->remove_conn(client_fd);
     std::cout << "[CLOSE] Successfully removed client " << client_fd << " from epoll\n";
 
     if (close(client_fd) == -1)

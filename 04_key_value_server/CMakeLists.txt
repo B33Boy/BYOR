@@ -14,5 +14,12 @@ if(CMAKE_BUILD_TYPE MATCHES "Debug")
     set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${SANITIZER_FLAGS}")
 endif()
 
-add_executable(server src/main.cpp src/server.cpp src/epoll_wrapper.cpp)
+add_library(server_lib STATIC src/server.cpp src/epoll_wrapper.cpp)
+
+add_executable(server src/main.cpp)
+target_link_libraries(server PRIVATE server_lib)
+
 add_executable(client src/client.cpp)
+target_link_libraries(client PRIVATE server_lib)
+
+add_subdirectory(tests)
