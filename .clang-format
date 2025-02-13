@@ -24,3 +24,11 @@ BreakBeforeInheritanceComma: false
 
 PointerAlignment: Left
 AllowShortFunctionsOnASingleLine: None
+
+SpacesInConditionalStatement: true
+SpacesInBracedLists: true  # Ensures spaces inside { }
+SpacesInParentheses: false # Ensures no spaces inside ( )
+Cpp11BracedListStyle: false # Prevents removal of spaces inside braced lists
+
+
+ColumnLimit: 120
