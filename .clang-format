@@ -1,0 +1,26 @@
+---
+BasedOnStyle: LLVM
+
+# Alphabetize includes and group them by standard, system, and project headers
+SortIncludes: true
+IncludeBlocks: Regroup
+
+# Brace placement on new lines
+BreakBeforeBraces: Allman
+
+# Indentation settings
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never  # Ensures tabs are treated as spaces
+
+# Access modifiers (public, private, protected) should not be indented
+AccessModifierOffset: -4
+
+# Ensure consistent spacing within functions, enums, structs, etc.
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+BreakBeforeInheritanceComma: false
+
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: None
