@@ -3,24 +3,24 @@
 EpollWrapper::EpollWrapper(uint8_t max_events) : max_events_(max_events), events_(max_events)
 {
     epoll_fd_ = epoll_create1(0);
-    if (epoll_fd_ == -1)
+    if ( epoll_fd_ == -1 )
         throw std::runtime_error("Failed to create epoll fd");
 }
 
 EpollWrapper::~EpollWrapper()
 {
     // Close all monitoring connections
-    for (auto& [fd, _] : connections_)
+    for ( auto& [fd, _] : connections_ )
         remove_conn(fd);
 
     // Close epoll fd
-    if (close(epoll_fd_) != 0)
+    if ( close(epoll_fd_) != 0 )
         std::cerr << "Failed to close epoll fd. errno: " << errno << "\n";
 };
 
 void EpollWrapper::add_conn(int const fd) noexcept
 {
-    if (connections_.find(fd) != connections_.end())
+    if ( connections_.find(fd) != connections_.end() )
         return;
 
     Connection conn{};
@@ -37,13 +37,13 @@ void EpollWrapper::monitor(int const fd) const noexcept
     event.events = EPOLLIN;
     event.data.fd = fd;
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event))
+    if ( epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event) )
         std::cerr << "Failed to add fd " << fd << " to epoll. errno: " << errno << "\n";
 }
 
 void EpollWrapper::remove_conn(int const fd) noexcept
 {
-    if (connections_.find(fd) == connections_.end())
+    if ( connections_.find(fd) == connections_.end() )
         return;
 
     connections_.erase(fd);
@@ -52,7 +52,7 @@ void EpollWrapper::remove_conn(int const fd) noexcept
 
 void EpollWrapper::unmonitor(int const fd) const noexcept
 {
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr))
+    if ( epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) )
         std::cerr << "Failed to remove fd " << fd << " from epoll. errno: " << errno << "\n";
 }
 
@@ -72,15 +72,15 @@ void EpollWrapper::modify_conn(int const fd, uint32_t const event_flags) const n
     return event_count;
 }
 
-[[nodiscard]] auto EpollWrapper::get_event(int const idx)->epoll_event&
+[[nodiscard]] auto EpollWrapper::get_event(int const idx) -> epoll_event&
 {
     return events_.at(idx);
 }
 
-[[nodiscard]] auto EpollWrapper::get_connection(int const fd)->Connection&
+[[nodiscard]] auto EpollWrapper::get_connection(int const fd) -> Connection&
 {
     auto it = connections_.find(fd);
-    if (it == connections_.end())
+    if ( it == connections_.end() )
         throw std::out_of_range("Connection not found");
     // std::cerr << "Connection not found\n";
     return it->second;

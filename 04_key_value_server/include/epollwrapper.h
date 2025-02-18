@@ -4,11 +4,10 @@
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
+#include <sys/epoll.h> // for epoll_create1(), epoll_ctl(), struct epoll_event
+#include <unistd.h>    // for close(), read()
 #include <unordered_map>
 #include <vector>
-
-#include <unistd.h>    // for close(), read()
-#include <sys/epoll.h> // for epoll_create1(), epoll_ctl(), struct epoll_event
 
 enum class Flags : uint8_t
 {
@@ -37,7 +36,6 @@ public:
     virtual epoll_event& get_event(int idx) = 0;
     virtual Connection& get_connection(int fd) = 0;
 };
-
 
 class EpollWrapper : public IEpollWrapper
 {
