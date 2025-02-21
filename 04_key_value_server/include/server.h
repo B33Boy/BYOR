@@ -30,7 +30,8 @@ struct Response
     std::vector<uint8_t> data{};
 };
 
-class Server
+template <typename TSocketWrapper, typename TEpollWrapper>
+class Server final
 {
 private:
     static constexpr uint8_t DEFAULT_MAX_CLIENTS{ 100 };
@@ -40,11 +41,9 @@ private:
     static constexpr size_t MAX_CMD_ARGS = 200 * 1000;
 
 public:
-    Server(uint16_t port, std::unique_ptr<ISocketWrapper> sockwrapper = std::make_unique<SocketWrapper>(),
-           std::unique_ptr<IEpollWrapper> epoll = std::make_unique<EpollWrapper>(DEFAULT_MAX_CLIENTS),
-           uint8_t max_clients = DEFAULT_MAX_CLIENTS)
-        : server_fd_(-1), port_(port), sockwrapper_(std::move(sockwrapper)), epoll_(std::move(epoll)),
-          max_clients_(max_clients)
+    Server(uint16_t port, uint8_t max_clients = DEFAULT_MAX_CLIENTS, TSocketWrapper& socket_wrapper = TSocketWrapper{},
+           TEpollWrapper& epoll_wrapper = TEpollWrapper{})
+        : server_fd_(-1), port_(port), sockwrapper_(socket_wrapper), epoll_(epoll_wrapper), max_clients_(max_clients)
     {
     }
 
@@ -64,8 +63,8 @@ private:
 
     bool running_{ true };
 
-    std::unique_ptr<IEpollWrapper> epoll_;
-    std::unique_ptr<ISocketWrapper> const sockwrapper_;
+    TSocketWrapper& sockwrapper_;
+    TEpollWrapper& epoll_;
 
     std::map<std::string, std::string> g_data;
 
@@ -88,5 +87,7 @@ private:
     void handle_write_event(int const client_fd);
     void handle_close_event(int const client_fd);
 };
+
+#include "server.tpp"
 
 #endif

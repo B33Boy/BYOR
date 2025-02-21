@@ -1,43 +1,49 @@
-#include "epollwrapper.h"
 #include "server.h"
 
 #include <gmock/gmock.h>
 
-class MockEpollWrapper : public IEpollWrapper
+class MockEpollWrapper : public IEpollWrapperBase<MockEpollWrapper>
 {
 public:
-    MOCK_METHOD(void, add_conn, (int const fd), (noexcept, override));
-    MOCK_METHOD(void, remove_conn, (int const fd), (noexcept, override));
-    MOCK_METHOD(void, modify_conn, (int const fd, uint32_t const event_flags), (const, noexcept, override));
-    MOCK_METHOD(int, wait, (), (noexcept, override));
-    MOCK_METHOD(epoll_event&, get_event, (int idx), (override));
-    MOCK_METHOD(Connection&, get_connection, (int fd), (override));
+    MOCK_METHOD(void, add_conn_impl, (int), (noexcept));
+    MOCK_METHOD(void, remove_conn_impl, (int), (noexcept));
+    MOCK_METHOD(void, modify_conn_impl, (int, uint32_t), (const, noexcept));
+    MOCK_METHOD(int, wait_impl, (), (noexcept));
+    MOCK_METHOD(epoll_event&, get_event_impl, (int), ());
+    MOCK_METHOD(Connection&, get_connection_impl, (int), ());
 };
 
-class MockSocketWrapper : public ISocketWrapper
+class MockSocketWrapper : public ISocketWrapperBase<MockSocketWrapper>
 {
 public:
-    MOCK_METHOD(int, socket, (int domain, int type, int protocol), (const, override));
-    MOCK_METHOD(int, bind, (int fd, sockaddr const* addr, socklen_t addrlen), (const, override));
-    MOCK_METHOD(int, listen, (int fd, int backlog), (const, override));
-    MOCK_METHOD(int, accept, (int fd, sockaddr* addr, socklen_t* addrlen), (const, override));
-    MOCK_METHOD(int, close, (int fd), (const, override));
-    MOCK_METHOD(int, setsockopt, (int fd), (const, override));
-    MOCK_METHOD(int, fcntl, (int fd, int op), (const, override));
-    MOCK_METHOD(int, fcntl, (int fd, int op, int arg), (const, override));
+    MOCK_METHOD(int, socket_impl, (int, int, int), (const));
+    MOCK_METHOD(int, bind_impl, (int, const sockaddr*, socklen_t), (const));
+    MOCK_METHOD(int, listen_impl, (int, int), (const));
+    MOCK_METHOD(int, accept_impl, (int, sockaddr*, socklen_t*), (const));
+    MOCK_METHOD(int, close_impl, (int), (const));
+    MOCK_METHOD(int, setsockopt_impl, (int), (const));
+    MOCK_METHOD(int, fcntl_impl, (int, int), (const));
+    MOCK_METHOD(int, fcntl_impl, (int, int, int), (const));
 };
+
+#define AnyValue ::testing::_
 
 TEST(SERVER_TEST, EpollWrapperTracksServerFd)
 {
-    int const DUMMY_PORT{ 8080 };
-    auto mock_epoll = std::make_unique<MockEpollWrapper>();
-    auto epoll_ptr = mock_epoll.get();
+    // Arrange
+    uint16_t const DUMMY_PORT{ 8080 };
+    uint8_t const max_clients{ 100 };
+    int expected_fd{ 5 };
 
-    auto mock_socket_wrapper = std::make_unique<MockSocketWrapper>();
+    MockEpollWrapper mock_epollwrapper;
+    MockSocketWrapper mock_socketwrapper;
 
-    Server server(DUMMY_PORT, std::move(mock_socket_wrapper), std::move(mock_epoll));
+    Server<MockSocketWrapper, MockEpollWrapper> server(DUMMY_PORT, max_clients, mock_socketwrapper, mock_epollwrapper);
 
-    EXPECT_CALL(*epoll_ptr, add_conn(::testing::_)).Times(1).WillOnce([&server]() { server.stop(); });
+    ON_CALL(mock_socketwrapper, socket_impl(AnyValue, AnyValue, AnyValue))
+        .WillByDefault(::testing::Return(expected_fd));
 
+    // Act/Assert
+    EXPECT_CALL(mock_epollwrapper, add_conn_impl(expected_fd)).Times(1).WillOnce([&server]() { server.stop(); });
     server.start();
 }

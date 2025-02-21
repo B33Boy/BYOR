@@ -30,5 +30,8 @@ SpacesInBracedLists: true  # Ensures spaces inside { }
 SpacesInParentheses: false # Ensures no spaces inside ( )
 Cpp11BracedListStyle: false # Prevents removal of spaces inside braced lists
 
+# Ensure template and class headers are on separate lines
+BreakBeforeClassHead: Always
+BreakTemplateDeclarations: Yes
 
 ColumnLimit: 120

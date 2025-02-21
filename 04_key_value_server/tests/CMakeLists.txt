@@ -19,7 +19,6 @@ target_link_libraries(tests
     PRIVATE
     gtest
     gtest_main
-    server_lib
     gmock 
     gmock_main
 )
