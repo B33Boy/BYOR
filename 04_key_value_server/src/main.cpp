@@ -8,7 +8,7 @@ int main()
     SocketWrapper socket_wrapper;
     EpollWrapper epoll_wrapper(max_clients);
 
-    Server<SocketWrapper, EpollWrapper> server(port, max_clients, socket_wrapper, epoll_wrapper);
+    Server<SocketWrapper, EpollWrapper> server(port, socket_wrapper, epoll_wrapper, max_clients);
     server.start();
 
     return 0;

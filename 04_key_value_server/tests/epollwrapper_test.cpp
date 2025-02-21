@@ -32,13 +32,12 @@ TEST(SERVER_TEST, EpollWrapperTracksServerFd)
 {
     // Arrange
     uint16_t const DUMMY_PORT{ 8080 };
-    uint8_t const max_clients{ 100 };
     int expected_fd{ 5 };
 
     MockEpollWrapper mock_epollwrapper;
     MockSocketWrapper mock_socketwrapper;
 
-    Server<MockSocketWrapper, MockEpollWrapper> server(DUMMY_PORT, max_clients, mock_socketwrapper, mock_epollwrapper);
+    Server<MockSocketWrapper, MockEpollWrapper> server(DUMMY_PORT, mock_socketwrapper, mock_epollwrapper);
 
     ON_CALL(mock_socketwrapper, socket_impl(AnyValue, AnyValue, AnyValue))
         .WillByDefault(::testing::Return(expected_fd));

@@ -30,7 +30,7 @@ struct Response
     std::vector<uint8_t> data{};
 };
 
-template <typename TSocketWrapper, typename TEpollWrapper>
+template <class ISocketWrapperBase, class IEpollWrapperBase>
 class Server final
 {
 private:
@@ -41,8 +41,8 @@ private:
     static constexpr size_t MAX_CMD_ARGS = 200 * 1000;
 
 public:
-    Server(uint16_t port, uint8_t max_clients = DEFAULT_MAX_CLIENTS, TSocketWrapper& socket_wrapper = TSocketWrapper{},
-           TEpollWrapper& epoll_wrapper = TEpollWrapper{})
+    Server(uint16_t port, ISocketWrapperBase& socket_wrapper, IEpollWrapperBase& epoll_wrapper,
+           uint8_t max_clients = DEFAULT_MAX_CLIENTS)
         : server_fd_(-1), port_(port), sockwrapper_(socket_wrapper), epoll_(epoll_wrapper), max_clients_(max_clients)
     {
     }
@@ -63,8 +63,8 @@ private:
 
     bool running_{ true };
 
-    TSocketWrapper& sockwrapper_;
-    TEpollWrapper& epoll_;
+    ISocketWrapperBase& sockwrapper_;
+    IEpollWrapperBase& epoll_;
 
     std::map<std::string, std::string> g_data;
 

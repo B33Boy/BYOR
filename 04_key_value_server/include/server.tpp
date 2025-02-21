@@ -1,21 +1,21 @@
 #include "server.h"
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::create_server_socket()
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::create_server_socket()
 {
     server_fd_ = sockwrapper_.socket(AF_INET, SOCK_STREAM, 0);
     if ( server_fd_ == -1 )
         throw std::runtime_error("Failed to create socket");
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::set_socket_options() const noexcept
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::set_socket_options() const noexcept
 {
     sockwrapper_.setsockopt(server_fd_);
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::bind_socket() const
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::bind_socket() const
 {
     struct sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -26,8 +26,8 @@ void Server<TSocketWrapper, TEpollWrapper>::bind_socket() const
         throw std::runtime_error("Failed to bind a sockaddr to server_fd");
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-bool Server<TSocketWrapper, TEpollWrapper>::set_nonblocking(int const fd) const noexcept
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+bool Server<ISocketWrapperBase, IEpollWrapperBase>::set_nonblocking(int const fd) const noexcept
 {
     int flags = sockwrapper_.fcntl(fd, F_GETFL);
     if ( flags == -1 )
@@ -44,8 +44,8 @@ bool Server<TSocketWrapper, TEpollWrapper>::set_nonblocking(int const fd) const 
     return true;
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::setup_server()
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::setup_server()
 {
     try
     {
@@ -64,23 +64,23 @@ void Server<TSocketWrapper, TEpollWrapper>::setup_server()
     }
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::start()
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::start()
 {
     setup_server();
 
     // Add server sock to epoll_
-    epoll_.add_conn_impl(server_fd_);
+    epoll_.add_conn(server_fd_);
 
     std::cout << "Created Server, now listening on port: " << port_ << "\n";
 
     while ( running_ )
     {
-        int num_events = epoll_.wait_impl();
+        int num_events = epoll_.wait();
 
         for ( int i = 0; i < num_events; i++ )
         {
-            auto& event = epoll_.get_event_impl(i);
+            auto& event = epoll_.get_event(i);
 
             if ( event.data.fd == server_fd_ )
                 handle_new_connections();
@@ -101,15 +101,15 @@ void Server<TSocketWrapper, TEpollWrapper>::start()
     }
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::stop() noexcept
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::stop() noexcept
 {
     running_ = false;
 }
 
 /* ============================================== New Conn ============================================== */
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::handle_new_connections() noexcept
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_new_connections() noexcept
 {
     sockaddr_in client_addr{};
     socklen_t socklen{ sizeof(client_addr) };
@@ -129,14 +129,14 @@ void Server<TSocketWrapper, TEpollWrapper>::handle_new_connections() noexcept
         close(client_fd);
         return;
     }
-    epoll_.add_conn_impl(client_fd);
+    epoll_.add_conn(client_fd);
 }
 
 /* ============================================== READ ============================================== */
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::handle_read_event(int const client_fd)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(int const client_fd)
 {
-    auto& conn = epoll_.get_connection_impl(client_fd);
+    auto& conn = epoll_.get_connection(client_fd);
 
     // 1. Do a non-blocking read
     std::vector<uint8_t> buf(READ_BUFFER_SIZE);
@@ -170,15 +170,15 @@ void Server<TSocketWrapper, TEpollWrapper>::handle_read_event(int const client_f
     if ( !conn.outgoing.empty() )
     {
         std::cout << "[MODIFY] Client " << client_fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
-        epoll_.modify_conn_impl(client_fd, EPOLLOUT);
+        epoll_.modify_conn(client_fd, EPOLLOUT);
         handle_write_event(
             client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
     }
 }
 
 /* ============================================== Handle Request ============================================== */
-template <typename TSocketWrapper, typename TEpollWrapper>
-bool Server<TSocketWrapper, TEpollWrapper>::try_request(Connection& conn) noexcept
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+bool Server<ISocketWrapperBase, IEpollWrapperBase>::try_request(Connection& conn) noexcept
 {
     if ( conn.incoming.size() < LEN_FIELD_SIZE )
     {
@@ -229,9 +229,9 @@ bool Server<TSocketWrapper, TEpollWrapper>::try_request(Connection& conn) noexce
     return true;
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-bool Server<TSocketWrapper, TEpollWrapper>::read_cmd_data(uint8_t const*& data, uint8_t const* const end,
-                                                          size_t bytes_to_read, std::string& out)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+bool Server<ISocketWrapperBase, IEpollWrapperBase>::read_cmd_data(uint8_t const*& data, uint8_t const* const end,
+                                                                  size_t bytes_to_read, std::string& out)
 {
     if ( data + bytes_to_read > end )
     {
@@ -245,9 +245,9 @@ bool Server<TSocketWrapper, TEpollWrapper>::read_cmd_data(uint8_t const*& data, 
     return true;
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-bool Server<TSocketWrapper, TEpollWrapper>::read_cmd_length(uint8_t const*& data, uint8_t const* const end,
-                                                            uint32_t& out)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+bool Server<ISocketWrapperBase, IEpollWrapperBase>::read_cmd_length(uint8_t const*& data, uint8_t const* const end,
+                                                                    uint32_t& out)
 {
     if ( data + LEN_FIELD_SIZE > end )
         return false;
@@ -258,9 +258,9 @@ bool Server<TSocketWrapper, TEpollWrapper>::read_cmd_length(uint8_t const*& data
     return true;
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-bool Server<TSocketWrapper, TEpollWrapper>::parse_req(uint8_t const* data, size_t size,
-                                                      std::vector<std::string>& parsed_cmds)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+bool Server<ISocketWrapperBase, IEpollWrapperBase>::parse_req(uint8_t const* data, size_t size,
+                                                              std::vector<std::string>& parsed_cmds)
 {
     // +------+------+------+------+------+-----+------+------+
     // | nstr | len0 | cmd0 | len1 | cmd1 | ... | lenn | cmdn |
@@ -302,8 +302,8 @@ bool Server<TSocketWrapper, TEpollWrapper>::parse_req(uint8_t const* data, size_
     return true;
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::do_request(std::vector<std::string> const& cmd, Response& resp)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::do_request(std::vector<std::string> const& cmd, Response& resp)
 {
 
     if ( cmd.size() == 2 && cmd[0] == "get" )
@@ -337,8 +337,8 @@ void Server<TSocketWrapper, TEpollWrapper>::do_request(std::vector<std::string> 
     }
 }
 
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::make_response(Response& resp, std::vector<uint8_t>& out)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::make_response(Response& resp, std::vector<uint8_t>& out)
 {
     // Push resp length to outgoing buffer
     uint32_t resp_size = sizeof(resp.status) + resp.data.size();
@@ -352,15 +352,15 @@ void Server<TSocketWrapper, TEpollWrapper>::make_response(Response& resp, std::v
 }
 
 /* ============================================== Write ============================================== */
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::handle_write_event(int const client_fd)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(int const client_fd)
 {
-    auto& conn = epoll_.get_connection_impl(client_fd);
+    auto& conn = epoll_.get_connection(client_fd);
 
     if ( conn.outgoing.empty() )
     {
         std::cout << "[WRITE] Client " << client_fd << " -> No data to send, switching to EPOLLIN\n";
-        epoll_.modify_conn_impl(client_fd, EPOLLIN);
+        epoll_.modify_conn(client_fd, EPOLLIN);
         return;
     }
 
@@ -381,20 +381,20 @@ void Server<TSocketWrapper, TEpollWrapper>::handle_write_event(int const client_
     if ( conn.outgoing.empty() )
     {
         std::cout << "[MODIFY] Client " << client_fd << " -> No more data to read, switching to EPOLLIN\n";
-        epoll_.modify_conn_impl(client_fd, EPOLLIN);
+        epoll_.modify_conn(client_fd, EPOLLIN);
     }
     else
     {
         std::cout << "[MODIFY] Client " << client_fd << " -> Still data to send, keeping EPOLLOUT\n";
-        epoll_.modify_conn_impl(client_fd, EPOLLOUT);
+        epoll_.modify_conn(client_fd, EPOLLOUT);
     }
 }
 
 /* ============================================== Close ============================================== */
-template <typename TSocketWrapper, typename TEpollWrapper>
-void Server<TSocketWrapper, TEpollWrapper>::handle_close_event(int client_fd)
+template <class ISocketWrapperBase, class IEpollWrapperBase>
+void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_close_event(int client_fd)
 {
-    epoll_.remove_conn_impl(client_fd);
+    epoll_.remove_conn(client_fd);
     std::cout << "[CLOSE] Successfully removed client " << client_fd << " from epoll\n";
 
     if ( close(client_fd) == -1 )
