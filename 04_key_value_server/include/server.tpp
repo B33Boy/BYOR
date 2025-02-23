@@ -113,7 +113,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_new_connections() noe
 {
     sockaddr_in client_addr{};
     socklen_t socklen{ sizeof(client_addr) };
-    int client_fd = accept(server_fd_, (sockaddr*)&client_addr, &socklen);
+    int client_fd = sockwrapper_.accept(server_fd_, (sockaddr*)&client_addr, &socklen);
 
     if ( client_fd == -1 )
     {
