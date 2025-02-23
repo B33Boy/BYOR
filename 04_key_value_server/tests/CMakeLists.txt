@@ -11,7 +11,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 add_executable(tests
-    epollwrapper_test.cpp
+    server_test.cpp
 )
 
 # Link GoogleTest and your project's library
