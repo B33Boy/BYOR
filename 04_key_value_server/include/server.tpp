@@ -86,14 +86,27 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::start()
                 handle_new_connections();
             else
             {
+                auto& conn = epoll_.get_connection(event.data.fd);
+
                 if ( event.events & EPOLLIN )
-                    handle_read_event(event.data.fd);
+                {
+                    handle_read_event(conn);
+                    if ( conn.flags & static_cast<uint8_t>(Flags::WANT_WRITE) )
+                        epoll_.modify_conn(conn.fd, EPOLLOUT);
+                }
 
                 if ( event.events & EPOLLOUT )
-                    handle_write_event(event.data.fd);
+                {
+                    handle_write_event(conn);
+
+                    if ( conn.flags & static_cast<uint8_t>(Flags::WANT_READ) )
+                        epoll_.modify_conn(conn.fd, EPOLLIN);
+                    else
+                        epoll_.modify_conn(conn.fd, EPOLLOUT);
+                }
 
                 if ( event.events & EPOLLERR || event.events & EPOLLHUP )
-                    handle_close_event(event.data.fd);
+                    handle_close_event(conn);
             }
 
             std::cout << "=========================================================" << "\n";
@@ -134,45 +147,51 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_new_connections() noe
 
 /* ============================================== READ ============================================== */
 template <class ISocketWrapperBase, class IEpollWrapperBase>
-void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(int const client_fd)
+void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(Connection& conn)
 {
-    auto& conn = epoll_.get_connection(client_fd);
+    // auto& conn = epoll_.get_connection(client_fd);
 
     // 1. Do a non-blocking read
     std::vector<uint8_t> buf(READ_BUFFER_SIZE);
-    ssize_t bytes_read = read(client_fd, buf.data(), buf.size());
+    ssize_t bytes_read = read(conn.fd, buf.data(), buf.size());
 
     if ( bytes_read == 0 )
     {
-        std::cout << "[DISCONNECT] Client " << client_fd << " disconnected.\n";
-        handle_close_event(client_fd);
+        std::cout << "[DISCONNECT] Client " << conn.fd << " disconnected.\n";
+        handle_close_event(conn);
         return;
     }
 
     if ( bytes_read < 0 )
     {
         if ( errno == EAGAIN || errno == EWOULDBLOCK )
-            std::cerr << "[READ] Client " << client_fd
+            std::cerr << "[READ] Client " << conn.fd
                       << "-> No data available (non-blocking read), errno: " << std::strerror(errno) << "\n";
         return;
     }
 
     // 2. Add new data to the `Conn::incoming` buffer
     conn.incoming.insert(conn.incoming.end(), buf.begin(), buf.begin() + bytes_read);
-    std::cout << "[READ] Client " << client_fd << " -> Reading " << bytes_read << " bytes\n";
+    std::cout << "[READ] Client " << conn.fd << " -> Reading " << bytes_read << " bytes\n";
 
     // 3. Parse requests and generate responses
     while ( try_request(conn) )
     {
     }
 
-    // 4. Remove the message from `Conn::incoming`
+    // 4. Remove the message from `Conn::incoming` by calling write
     if ( !conn.outgoing.empty() )
     {
-        std::cout << "[MODIFY] Client " << client_fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
-        epoll_.modify_conn(client_fd, EPOLLOUT);
-        handle_write_event(
-            client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
+        std::cout << "[MODIFY] Client " << conn.fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
+
+        conn.flags |= static_cast<uint8_t>(Flags::WANT_WRITE);
+        handle_write_event(conn);
+
+        // Make conn.flags => writeable
+        // immediately call handle_write()
+        // epoll_.modify_conn(client_fd, EPOLLOUT);
+        // handle_write_event(
+        //     client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
     }
 }
 
@@ -189,11 +208,13 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::try_request(Connection& conn
     uint32_t data_len{};
     std::memcpy(&data_len, conn.incoming.data(), LEN_FIELD_SIZE);
 
+    std::cout << "[READ] Client " << conn.fd << " -> Request is composed of " << data_len << " bytes\n";
+
     if ( data_len > MAX_MSG_FIELD_SIZE )
     {
         std::cerr << "[ERROR] Client " << conn.fd
                   << " -> given data_length greater than MAX_MSG_FIELD_SIZE, closing connection\n";
-        handle_close_event(conn.fd); // TODO: NEED TO HANDLE SEGFAULT WHEN FUNCTION RETURNS and we try to access conn.fd
+        handle_close_event(conn); // TODO: NEED TO HANDLE SEGFAULT WHEN FUNCTION RETURNS and we try to access conn.fd
         return false;
     }
 
@@ -205,8 +226,7 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::try_request(Connection& conn
 
     auto const* request = conn.incoming.data() + LEN_FIELD_SIZE;
 
-    // Validate memory before creating string_view
-    if ( request == nullptr || data_len > conn.incoming.size() - LEN_FIELD_SIZE )
+    if ( !request )
     {
         std::cerr << "[ERROR] Client " << conn.fd << " -> Invalid request pointer or length.\n";
         return false;
@@ -353,52 +373,55 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::make_response(Response& resp
 
 /* ============================================== Write ============================================== */
 template <class ISocketWrapperBase, class IEpollWrapperBase>
-void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(int const client_fd)
+void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(Connection& conn)
 {
-    auto& conn = epoll_.get_connection(client_fd);
+    // auto& conn = epoll_.get_connection(client_fd);
 
     if ( conn.outgoing.empty() )
     {
-        std::cout << "[WRITE] Client " << client_fd << " -> No data to send, switching to EPOLLIN\n";
-        epoll_.modify_conn(client_fd, EPOLLIN);
+        std::cout << "[WRITE] Client " << conn.fd << " -> No data to send, switching to EPOLLIN\n";
+        // epoll_.modify_conn(client_fd, EPOLLIN);
+        conn.flags = static_cast<uint8_t>(Flags::WANT_READ);
         return;
     }
 
-    ssize_t bytes_written = write(client_fd, conn.outgoing.data(), conn.outgoing.size());
+    ssize_t bytes_written = write(conn.fd, conn.outgoing.data(), conn.outgoing.size());
 
     if ( bytes_written < 0 )
     {
-        std::cerr << "[ERROR] Write error to client " << client_fd << ", errno: " << std::strerror(errno) << "\n";
+        std::cerr << "[ERROR] Write error to client " << conn.fd << ", errno: " << std::strerror(errno) << "\n";
         if ( errno == EAGAIN || errno == EWOULDBLOCK )
             return;
-        handle_close_event(client_fd);
+        handle_close_event(conn);
         return;
     }
 
-    std::cout << "[WRITE] Client " << client_fd << " -> Wrote " << bytes_written << " bytes\n";
+    std::cout << "[WRITE] Client " << conn.fd << " -> Wrote " << bytes_written << " bytes\n";
     conn.outgoing.erase(conn.outgoing.begin(), conn.outgoing.begin() + bytes_written);
 
     if ( conn.outgoing.empty() )
     {
-        std::cout << "[MODIFY] Client " << client_fd << " -> No more data to read, switching to EPOLLIN\n";
-        epoll_.modify_conn(client_fd, EPOLLIN);
+        std::cout << "[MODIFY] Client " << conn.fd << " -> No more data to read, switching to EPOLLIN\n";
+        conn.flags = static_cast<uint8_t>(Flags::WANT_READ);
+        // epoll_.modify_conn(client_fd, EPOLLIN);
     }
     else
     {
-        std::cout << "[MODIFY] Client " << client_fd << " -> Still data to send, keeping EPOLLOUT\n";
-        epoll_.modify_conn(client_fd, EPOLLOUT);
+        std::cout << "[MODIFY] Client " << conn.fd << " -> Still data to send, keeping EPOLLOUT\n";
+        conn.flags |= static_cast<uint8_t>(Flags::WANT_WRITE);
+        // epoll_.modify_conn(client_fd, EPOLLOUT);
     }
 }
 
 /* ============================================== Close ============================================== */
 template <class ISocketWrapperBase, class IEpollWrapperBase>
-void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_close_event(int client_fd)
+void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_close_event(Connection& conn)
 {
-    epoll_.remove_conn(client_fd);
-    std::cout << "[CLOSE] Successfully removed client " << client_fd << " from epoll\n";
+    epoll_.remove_conn(conn.fd);
+    std::cout << "[CLOSE] Successfully removed client " << conn.fd << " from epoll\n";
 
-    if ( close(client_fd) == -1 )
-        std::cerr << "[ERROR] Failed to close client socket " << client_fd << ": " << std::strerror(errno) << "\n";
+    if ( close(conn.fd) == -1 )
+        std::cerr << "[ERROR] Failed to close client socket " << conn.fd << ": " << std::strerror(errno) << "\n";
     else
-        std::cout << "[CLOSE] Successfully closed client " << client_fd << "\n";
+        std::cout << "[CLOSE] Successfully closed client " << conn.fd << "\n";
 }

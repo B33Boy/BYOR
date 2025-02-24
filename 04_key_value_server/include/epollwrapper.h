@@ -11,8 +11,8 @@
 
 enum class Flags : uint8_t
 {
-    WANT_READ = 1 << 0,
-    WANT_WRITE = 1 << 1,
+    WANT_READ = 1 << 0,  // 0x01
+    WANT_WRITE = 1 << 1, // 0x02
 };
 
 struct Connection

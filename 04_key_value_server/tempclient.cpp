@@ -76,12 +76,15 @@ static int32_t send_req(int fd, const std::vector<std::string>& cmd)
     {
         return -1;
     }
+    std::cout << "Msg len: " << len << "\n";
 
     char wbuf[4 + k_max_msg];
     memcpy(&wbuf[0], &len, 4); // assume little endian
+    
     uint32_t n = cmd.size();
     memcpy(&wbuf[4], &n, 4);
     size_t cur = 8;
+    
     for ( const std::string& s : cmd )
     {
         uint32_t p = (uint32_t)s.size();

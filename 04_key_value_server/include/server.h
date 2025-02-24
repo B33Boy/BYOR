@@ -75,7 +75,7 @@ private:
     void setup_server();
 
     void handle_new_connections() noexcept;
-    void handle_read_event(int const client_fd);
+    void handle_read_event(Connection& conn);
 
     bool try_request(Connection& conn) noexcept;
     bool parse_req(uint8_t const* data, size_t size, std::vector<std::string>& parsed_cmds);
@@ -84,8 +84,8 @@ private:
     void do_request(std::vector<std::string> const& cmd, Response& resp);
     void make_response(Response& resp, std::vector<uint8_t>& out);
 
-    void handle_write_event(int const client_fd);
-    void handle_close_event(int const client_fd);
+    void handle_write_event(Connection& conn);
+    void handle_close_event(Connection& conn);
 };
 
 #include "server.tpp"
