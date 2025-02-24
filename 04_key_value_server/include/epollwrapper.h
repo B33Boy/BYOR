@@ -9,16 +9,9 @@
 #include <unordered_map>
 #include <vector>
 
-enum class Flags : uint8_t
-{
-    WANT_READ = 1 << 0,  // 0x01
-    WANT_WRITE = 1 << 1, // 0x02
-};
-
 struct Connection
 {
     int fd{ -1 };
-    uint8_t flags{ 0 };
     std::vector<uint8_t> incoming{};
     std::vector<uint8_t> outgoing{};
 };
@@ -92,9 +85,9 @@ public:
     }
     ~EpollWrapper()
     {
-        // Close all monitoring connections
+        // Close all monitoring connections server + clients
         for ( auto& [fd, _] : connections_ )
-            remove_conn_impl(fd);
+            remove_conn(fd);
 
         // Close epoll fd
         if ( close(epoll_fd_) != 0 )
@@ -108,7 +101,6 @@ public:
 
         Connection conn{};
         conn.fd = fd;
-        conn.flags |= static_cast<uint8_t>(Flags::WANT_READ);
         connections_[fd] = conn;
 
         monitor(fd);

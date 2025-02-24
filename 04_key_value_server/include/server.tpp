@@ -89,21 +89,10 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::start()
                 auto& conn = epoll_.get_connection(event.data.fd);
 
                 if ( event.events & EPOLLIN )
-                {
                     handle_read_event(conn);
-                    if ( conn.flags & static_cast<uint8_t>(Flags::WANT_WRITE) )
-                        epoll_.modify_conn(conn.fd, EPOLLOUT);
-                }
 
                 if ( event.events & EPOLLOUT )
-                {
                     handle_write_event(conn);
-
-                    if ( conn.flags & static_cast<uint8_t>(Flags::WANT_READ) )
-                        epoll_.modify_conn(conn.fd, EPOLLIN);
-                    else
-                        epoll_.modify_conn(conn.fd, EPOLLOUT);
-                }
 
                 if ( event.events & EPOLLERR || event.events & EPOLLHUP )
                     handle_close_event(conn);
@@ -149,8 +138,6 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_new_connections() noe
 template <class ISocketWrapperBase, class IEpollWrapperBase>
 void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(Connection& conn)
 {
-    // auto& conn = epoll_.get_connection(client_fd);
-
     // 1. Do a non-blocking read
     std::vector<uint8_t> buf(READ_BUFFER_SIZE);
     ssize_t bytes_read = read(conn.fd, buf.data(), buf.size());
@@ -183,15 +170,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(Connection
     if ( !conn.outgoing.empty() )
     {
         std::cout << "[MODIFY] Client " << conn.fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
-
-        conn.flags |= static_cast<uint8_t>(Flags::WANT_WRITE);
         handle_write_event(conn);
-
-        // Make conn.flags => writeable
-        // immediately call handle_write()
-        // epoll_.modify_conn(client_fd, EPOLLOUT);
-        // handle_write_event(
-        //     client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
     }
 }
 
@@ -375,13 +354,10 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::make_response(Response& resp
 template <class ISocketWrapperBase, class IEpollWrapperBase>
 void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(Connection& conn)
 {
-    // auto& conn = epoll_.get_connection(client_fd);
-
     if ( conn.outgoing.empty() )
     {
         std::cout << "[WRITE] Client " << conn.fd << " -> No data to send, switching to EPOLLIN\n";
-        // epoll_.modify_conn(client_fd, EPOLLIN);
-        conn.flags = static_cast<uint8_t>(Flags::WANT_READ);
+        epoll_.modify_conn(conn.fd, EPOLLIN);
         return;
     }
 
@@ -402,14 +378,11 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(Connectio
     if ( conn.outgoing.empty() )
     {
         std::cout << "[MODIFY] Client " << conn.fd << " -> No more data to read, switching to EPOLLIN\n";
-        conn.flags = static_cast<uint8_t>(Flags::WANT_READ);
-        // epoll_.modify_conn(client_fd, EPOLLIN);
+        epoll_.modify_conn(conn.fd, EPOLLIN);
     }
     else
     {
         std::cout << "[MODIFY] Client " << conn.fd << " -> Still data to send, keeping EPOLLOUT\n";
-        conn.flags |= static_cast<uint8_t>(Flags::WANT_WRITE);
-        // epoll_.modify_conn(client_fd, EPOLLOUT);
     }
 }
 
