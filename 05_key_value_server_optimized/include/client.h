@@ -5,6 +5,7 @@
 #include <cstdint>     // uint8_t, uint32_t
 #include <cstring>     // std::memcpy
 #include <iostream>    // std::cout, std::cerr
+#include <span>
 #include <sstream>
 #include <string>       // std::string, std::stoi
 #include <sys/socket.h> // socket, connect, send, recv
@@ -120,35 +121,36 @@ public:
     std::string deserialize(std::vector<uint8_t> const& message)
     {
         // Handle <4 bytes
+        if ( message.size() < 4 )
+            return "Did not receive enough bytes";
 
-        // Parse data length
         uint32_t data_len{};
         memcpy(&data_len, message.data(), sizeof(data_len));
 
-        auto it = message.begin() + sizeof(data_len);
+        if ( data_len > MAX_MSG_FIELD_SIZE )
+            return "Did not receive enough bytes";
 
-        // Handle if data_len exceeds buffer size
+        // Handle status code
+        uint8_t status{};
+        auto status_begin = message.data() + sizeof(data_len);
+        memcpy(&status, status_begin, sizeof(status));
 
-        return make_response(message, it);
+        std::string resp{};
+        resp += "Status: " + std::to_string(static_cast<int>(status));
+
+        // Parse data
+        resp += "\nResponse: ";
+        if ( data_len > 1 && message.size() >= sizeof(data_len) + sizeof(status) + data_len )
+        {
+            auto data_begin = status_begin + sizeof(status);
+            resp += std::string(data_begin, data_begin + data_len);
+        }
+
+        return resp;
     }
 
 private:
-    std::string make_response(std::vector<uint8_t> const& data, std::vector<uint8_t>::const_iterator& it)
-    {
-        std::ostringstream resp;
-
-        resp << "Response Code: " << static_cast<int>(*it) << "\n";
-        it++;
-
-        resp << "Response: ";
-        while ( it != data.end() )
-        {
-            resp << static_cast<char>(*it);
-            ++it;
-        }
-
-        return resp.str();
-    }
+    size_t MAX_MSG_FIELD_SIZE{ 32 << 20 };
 };
 
 template <typename Transport, typename Serializer, typename Deserializer>
