@@ -52,9 +52,8 @@ public:
     }
 
 private:
-    // Enforce compile-time check to prevent misuse
-    IEpollWrapperBase() {};
-    friend Derived;
+    IEpollWrapperBase() = default; // prevent direct instantiation
+    friend Derived;                // Allow only derived to construct base
 
     // Simplify syntax for delegating work to derived class
     Derived& derived()
@@ -62,7 +61,7 @@ private:
         return static_cast<Derived&>(*this);
     }
 
-    const Derived& derived() const
+    Derived const& derived() const noexcept
     {
         return static_cast<const Derived&>(*this);
     }
