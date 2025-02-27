@@ -1,19 +1,15 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include <arpa/inet.h> // inet_pton()
-#include <assert.h>
-#include <errno.h>
-#include <iostream>
-#include <netinet/ip.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <string>
-#include <sys/socket.h> // socket()
-#include <unistd.h>
-#include <vector>
+#include <arpa/inet.h> // sockaddr_in, inet_pton, htons
+#include <cstdint>     // uint8_t, uint32_t
+#include <cstring>     // std::memcpy
+#include <iostream>    // std::cout, std::cerr
+#include <sstream>
+#include <string>       // std::string, std::stoi
+#include <sys/socket.h> // socket, connect, send, recv
+#include <unistd.h>     // close
+#include <vector>       // std::vector
 
 class TcpTransport
 {
@@ -51,7 +47,7 @@ public:
         ::send(client_fd_, data.data(), data.size(), flags);
     }
 
-    std::vector<uint8_t> receive(int buffer_size, int const flags = 0)
+    std::vector<uint8_t> receive(size_t buffer_size = 32 << 20, int const flags = 0)
     {
         std::vector<uint8_t> buf(buffer_size);
 
@@ -60,7 +56,7 @@ public:
         {
             // Handle error
         }
-        return buffer;
+        return buf;
     }
 
     ~TcpTransport()
@@ -75,13 +71,47 @@ private:
 class RedisSerializer
 {
 public:
-    std::vector<uint8_t> serialize(char** message)
+    std::vector<uint8_t> serialize(std::vector<std::string>& message)
     {
+        // +---------+------+------+------+------+------+-----+------+------+
+        // |  nbytes | nstr | len0 | cmd0 | len1 | cmd1 | ... | lenn | cmdn |
+        // +---------+------+------+------+------+------+-----+------+------+
+        // Note: For [nstr, len0, cmd0], nstr would be 1
 
-        std::vector<uint8_t> out{};
+        uint32_t total_len = 2 * LEN_FIELD_SIZE + LEN_FIELD_SIZE * message.size();
+        for ( auto const& s : message )
+            total_len += s.length();
 
-        return out;
+        std::vector<uint8_t> wbuf(total_len);
+
+        uint8_t* p = wbuf.data();
+
+        // Populate nbytes
+        total_len -= LEN_FIELD_SIZE; // Compute size of all bytes excluding nbytes
+        memcpy(p, &total_len, LEN_FIELD_SIZE);
+        p += LEN_FIELD_SIZE;
+
+        // Populate nstr
+        auto nstr = static_cast<uint32_t>(message.size());
+        memcpy(p, &nstr, LEN_FIELD_SIZE);
+        p += LEN_FIELD_SIZE;
+
+        // Populate len0, cmd0, ...
+        for ( auto const& s : message )
+        {
+            uint32_t len = static_cast<uint32_t>(s.length());
+            memcpy(p, &len, LEN_FIELD_SIZE);
+            p += LEN_FIELD_SIZE;
+
+            memcpy(p, s.data(), len);
+            p += len;
+        }
+
+        return wbuf;
     }
+
+private:
+    int LEN_FIELD_SIZE{ 4 };
 };
 
 class RedisDeserializer
@@ -89,6 +119,35 @@ class RedisDeserializer
 public:
     std::string deserialize(std::vector<uint8_t> const& message)
     {
+        // Handle <4 bytes
+
+        // Parse data length
+        uint32_t data_len{};
+        memcpy(&data_len, message.data(), sizeof(data_len));
+
+        auto it = message.begin() + sizeof(data_len);
+
+        // Handle if data_len exceeds buffer size
+
+        return make_response(message, it);
+    }
+
+private:
+    std::string make_response(std::vector<uint8_t> const& data, std::vector<uint8_t>::const_iterator& it)
+    {
+        std::ostringstream resp;
+
+        resp << "Response Code: " << static_cast<int>(*it) << "\n";
+        it++;
+
+        resp << "Response: ";
+        while ( it != data.end() )
+        {
+            resp << static_cast<char>(*it);
+            ++it;
+        }
+
+        return resp.str();
     }
 };
 
@@ -106,22 +165,16 @@ public:
         transport_.connect(address, port);
     }
 
-    // void send_message(std::string const& message)
-    // {
-    // auto data = serializer_.serialize(message);
-    // transport_.send(data);
-    // }
-
-    void send_message(char** message)
+    void send_message(std::vector<std::string>& message)
     {
         auto data = serializer_.serialize(message);
         transport_.send(data);
     }
 
-    void receive_message()
+    std::string receive_message()
     {
         auto data = transport_.receive();
-        return serializer.deserialize(data);
+        return deserializer_.deserialize(data);
     }
 
 private:
@@ -146,11 +199,17 @@ public:
             return;
         }
 
-        std::string server = argv[1];
-        int port = std::stoi(argv[2]);
-
+        std::string const server = argv[1];
+        int const port = std::stoi(argv[2]);
         client_.connect(server, port);
-        client_.send_message(argv[3]);
+
+        int const cmd_size{ argc - 3 };
+        std::vector<std::string> cmds(cmd_size);
+        for ( int i = 0; i < cmd_size; i++ )
+            cmds[i] = argv[i + 3];
+
+        client_.send_message(cmds);
+        std::cout << "Client returned: " << client_.receive_message() << "\n";
     }
 
 private:
