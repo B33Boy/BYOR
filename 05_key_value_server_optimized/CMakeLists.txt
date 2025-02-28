@@ -18,4 +18,8 @@ add_executable(server src/main.cpp)
 
 add_executable(client src/client.cpp)
 
+# find_package(benchmark REQUIRED)
+# add_executable(server_benchmark benchmarks/server_benchmark.cpp)
+# target_link_libraries(server_benchmark benchmark::benchmark)
+
 add_subdirectory(tests)
