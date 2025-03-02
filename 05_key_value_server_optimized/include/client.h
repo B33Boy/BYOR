@@ -1,12 +1,12 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
+#include "spdlog/spdlog.h"
+
 #include <arpa/inet.h> // sockaddr_in, inet_pton, htons
 #include <cstdint>     // uint8_t, uint32_t
 #include <cstring>     // std::memcpy
-#include <iostream>    // std::cout, std::cerr
-#include <span>
-#include <sstream>
+#include <iostream>
 #include <string>       // std::string, std::stoi
 #include <sys/socket.h> // socket, connect, send, recv
 #include <unistd.h>     // close
@@ -128,7 +128,7 @@ public:
         memcpy(&data_len, message.data(), sizeof(data_len));
 
         if ( data_len > MAX_MSG_FIELD_SIZE )
-            return "Did not receive enough bytes";
+            return "Received too many bytes!";
 
         // Handle status code
         uint8_t status{};
@@ -211,7 +211,8 @@ public:
             cmds[i] = argv[i + 3];
 
         client_.send_message(cmds);
-        std::cout << "Client returned: " << client_.receive_message() << "\n";
+        auto msg = client_.receive_message();
+        spdlog::info(msg);
     }
 
 private:
