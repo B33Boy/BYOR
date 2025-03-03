@@ -187,7 +187,7 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::try_request(Connection& conn
     uint32_t data_len{};
     std::memcpy(&data_len, conn.incoming.data(), LEN_FIELD_SIZE);
 
-    std::cout << "[READ] Client " << conn.fd << " -> Request is composed of " << data_len << " bytes\n";
+    std::cout << "[READ] Client " << conn.fd << " -> Request is comprised of " << data_len << " bytes\n";
 
     if ( data_len > MAX_MSG_FIELD_SIZE )
     {
@@ -341,7 +341,8 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::make_response(Response& resp
 {
     // Push resp length to outgoing buffer
     uint32_t resp_size = sizeof(resp.status) + resp.data.size();
-    out.insert(out.end(), &resp_size, &resp_size + LEN_FIELD_SIZE);
+    uint8_t* size_ptr = reinterpret_cast<uint8_t*>(&resp_size);
+    out.insert(out.end(), size_ptr, size_ptr + sizeof(resp_size));
 
     // Push error code to outgoing buffer
     out.push_back(static_cast<uint8_t>(resp.status));
@@ -390,11 +391,13 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(Connectio
 template <class ISocketWrapperBase, class IEpollWrapperBase>
 void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_close_event(Connection& conn)
 {
-    epoll_.remove_conn(conn.fd);
-    std::cout << "[CLOSE] Successfully removed client " << conn.fd << " from epoll\n";
+    int fd = conn.fd;
 
-    if ( close(conn.fd) == -1 )
-        std::cerr << "[ERROR] Failed to close client socket " << conn.fd << ": " << std::strerror(errno) << "\n";
+    std::cout << "[CLOSE] Removing client " << fd << " from epoll\n";
+    epoll_.remove_conn(fd);
+
+    if ( close(fd) == -1 )
+        std::cerr << "[ERROR] Failed to close client socket " << fd << ": " << std::strerror(errno) << "\n";
     else
-        std::cout << "[CLOSE] Successfully closed client " << conn.fd << "\n";
+        std::cout << "[CLOSE] Successfully closed client " << fd << "\n";
 }
