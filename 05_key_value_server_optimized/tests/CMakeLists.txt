@@ -21,6 +21,7 @@ target_link_libraries(tests
     gtest_main
     gmock 
     gmock_main
+    spdlog::spdlog
 )
 
 # Register tests

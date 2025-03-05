@@ -3,9 +3,9 @@
 
 #include "epollwrapper.h"
 #include "socketwrapper.h"
+#include "spdlog/spdlog.h"
 
 #include <arpa/inet.h> // ntohs(), ntohl()
-#include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h> // F_GETFL, F_SETFL, O_NONBLOCK

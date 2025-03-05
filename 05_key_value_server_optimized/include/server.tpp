@@ -32,13 +32,13 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::set_nonblocking(int const fd
     int flags = sockwrapper_.fcntl(fd, F_GETFL);
     if ( flags == -1 )
     {
-        std::cerr << "Failed to GET fcntl():" << std::strerror(errno) << "\n";
+        spdlog::error("Failed to GET fcntl(). err: {}", std::strerror(errno));
         return false;
     }
 
     if ( sockwrapper_.fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1 )
     {
-        std::cerr << "Failed to SET fcntl():" << std::strerror(errno) << "\n";
+        spdlog::error("Failed to SET fcntl(). err: {}", std::strerror(errno));
         return false;
     }
     return true;
@@ -58,7 +58,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::setup_server()
     }
     catch ( std::runtime_error const& e )
     {
-        std::cerr << e.what() << std::endl;
+        spdlog::error("Runtime exception while setting up server! {}", e.what());
         sockwrapper_.close(server_fd_);
         throw;
     }
@@ -71,12 +71,12 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::start()
 
     // Add server sock to epoll_
     epoll_.add_conn(server_fd_);
-
-    std::cout << "Created Server, now listening on port: " << port_ << "\n";
+    spdlog::info("Created Server, now listening on port: {}", port_);
 
     while ( running_ )
     {
         int num_events = epoll_.wait();
+        spdlog::info("Number of ready events: {}", num_events);
 
         for ( int i = 0; i < num_events; i++ )
         {
@@ -98,7 +98,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::start()
                     handle_close_event(conn);
             }
 
-            std::cout << "=========================================================" << "\n";
+            spdlog::info("=========================================================");
         }
     }
 }
@@ -119,15 +119,15 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_new_connections() noe
 
     if ( client_fd == -1 )
     {
-        std::cerr << "[ERROR] Connection failed with client: " << std::strerror(errno) << "\n";
+        spdlog::error("[ERROR] Connection failed with client. err: {}", std::strerror(errno));
         return;
     }
 
-    std::cout << "[INFO] New client connected: " << client_fd << "\n";
+    spdlog::info("[INFO] New client connected: {}", client_fd);
 
     if ( !set_nonblocking(client_fd) )
     {
-        std::cerr << "[ERROR] Failed to set client socket as non-blocking: " << std::strerror(errno) << "\n";
+        spdlog::error("[ERROR] Failed to set client socket as non-blocking. err: {}", std::strerror(errno));
         close(client_fd);
         return;
     }
@@ -144,7 +144,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(Connection
 
     if ( bytes_read == 0 )
     {
-        std::cout << "[DISCONNECT] Client " << conn.fd << " disconnected.\n";
+        spdlog::info("[DISCONNECT] Client {} disconnected", conn.fd);
         handle_close_event(conn);
         return;
     }
@@ -152,14 +152,15 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(Connection
     if ( bytes_read < 0 )
     {
         if ( errno == EAGAIN || errno == EWOULDBLOCK )
-            std::cerr << "[READ] Client " << conn.fd
-                      << "-> No data available (non-blocking read), errno: " << std::strerror(errno) << "\n";
+            spdlog::error("[READ] Client {} -> No data available (non-blocking read). err: {}", conn.fd,
+                          std::strerror(errno));
+
         return;
     }
 
     // 2. Add new data to the `Conn::incoming` buffer
     conn.incoming.insert(conn.incoming.end(), buf.begin(), buf.begin() + bytes_read);
-    std::cout << "[READ] Client " << conn.fd << " -> Reading " << bytes_read << " bytes\n";
+    spdlog::info("[READ] Client: {} -> Reading {} bytes", conn.fd, bytes_read);
 
     // 3. Parse requests and generate responses
     while ( try_request(conn) )
@@ -169,7 +170,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(Connection
     // 4. Remove the message from `Conn::incoming` by calling write
     if ( !conn.outgoing.empty() )
     {
-        std::cout << "[MODIFY] Client " << conn.fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
+        spdlog::info("[MODIFY] Client {} -> Outgoing buffer has data, enabling EPOLLOUT", conn.fd);
         handle_write_event(conn);
     }
 }
@@ -180,26 +181,27 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::try_request(Connection& conn
 {
     if ( conn.incoming.size() < LEN_FIELD_SIZE )
     {
-        std::cout << "[ERROR] Client " << conn.fd << " -> No more bytes to be read\n";
+        spdlog::info("[ERROR] Client {} -> No more bytes to be read", conn.fd);
         return false;
     }
 
     uint32_t data_len{};
     std::memcpy(&data_len, conn.incoming.data(), LEN_FIELD_SIZE);
 
-    std::cout << "[READ] Client " << conn.fd << " -> Request is comprised of " << data_len << " bytes\n";
+    spdlog::info("[READ] Client {} -> Request is comprised of {} bytes", conn.fd, data_len);
 
     if ( data_len > MAX_MSG_FIELD_SIZE )
     {
-        std::cerr << "[ERROR] Client " << conn.fd
-                  << " -> given data_length greater than MAX_MSG_FIELD_SIZE, closing connection\n";
+        spdlog::error("[ERROR] Client {} -> given data_length greater than MAX_MSG_FIELD_SIZE, closing connection",
+                      conn.fd);
+
         handle_close_event(conn); // TODO: NEED TO HANDLE SEGFAULT WHEN FUNCTION RETURNS and we try to access conn.fd
         return false;
     }
 
     if ( LEN_FIELD_SIZE + data_len > conn.incoming.size() )
     {
-        std::cout << "Client" << conn.fd << " -> Less incoming bytes than specified in data_len \n";
+        spdlog::info("[READ] Client {} -> Less incoming bytes than specified in data_len", conn.fd);
         return false;
     }
 
@@ -207,14 +209,14 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::try_request(Connection& conn
 
     if ( !request )
     {
-        std::cerr << "[ERROR] Client " << conn.fd << " -> Invalid request pointer or length.\n";
+        spdlog::error("[ERROR] Client {} -> Invalid request pointer or length.", conn.fd);
         return false;
     }
 
     std::vector<std::string> cmd;
     if ( !parse_req(request, data_len, cmd) )
     {
-        std::cout << "[ERROR] Client " << conn.fd << " -> Bad Request\n";
+        spdlog::info("[ERROR] Client {} -> Bad Request", conn.fd);
         return false;
     }
 
@@ -234,7 +236,7 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::read_cmd_data(uint8_t const*
 {
     if ( data + bytes_to_read > end )
     {
-        std::cout << "[ERROR] Can't read cmd data\n";
+        spdlog::info("[ERROR] Can't read cmd data");
         return false;
     }
 
@@ -270,13 +272,13 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::parse_req(uint8_t const* dat
     uint32_t nstr{};
     if ( !read_cmd_length(data, end, nstr) )
     {
-        std::cout << "[ERROR] Can't read nstr\n";
+        spdlog::info("[ERROR] Can't read nstr");
         return false;
     }
 
     if ( nstr > MAX_CMD_ARGS )
     {
-        std::cerr << "[ERROR] Parsing -> Given number of cmds is greater than MAX CMD ARGS\n";
+        spdlog::error("[ERROR] Given number of cmds is greater than MAX CMD ARGS");
         return false;
     }
 
@@ -286,14 +288,14 @@ bool Server<ISocketWrapperBase, IEpollWrapperBase>::parse_req(uint8_t const* dat
         uint32_t cmd_len{};
         if ( !read_cmd_length(data, end, cmd_len) )
         {
-            std::cout << "[ERROR] Can't read len" << i << "\n";
+            spdlog::info("[ERROR] Can't read len {}", i);
             return false;
         }
 
         parsed_cmds.push_back(std::string());
         if ( !read_cmd_data(data, end, cmd_len, parsed_cmds.back()) )
         {
-            std::cout << "[ERROR] Can't read cmd" << i << "\n";
+            spdlog::info("[ERROR] Can't read cmd");
             return false;
         }
     }
@@ -331,7 +333,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::do_request(std::vector<std::
     }
     else
     {
-        std::cout << "Invalid command received\n";
+        spdlog::info("[ERROR]Invalid command received");
         resp.status = ResponseStatus::RES_ERR;
     }
 }
@@ -357,7 +359,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(Connectio
 {
     if ( conn.outgoing.empty() )
     {
-        std::cout << "[WRITE] Client " << conn.fd << " -> No data to send, switching to EPOLLIN\n";
+        spdlog::info("[WRITE] Client {} -> No data to send, switching to EPOLLIN", conn.fd);
         epoll_.modify_conn(conn.fd, EPOLLIN);
         return;
     }
@@ -366,24 +368,24 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_write_event(Connectio
 
     if ( bytes_written < 0 )
     {
-        std::cerr << "[ERROR] Write error to client " << conn.fd << ", errno: " << std::strerror(errno) << "\n";
+        spdlog::error("[ERROR] Write error to client {} -> err: {}", conn.fd, std::strerror(errno));
         if ( errno == EAGAIN || errno == EWOULDBLOCK )
             return;
         handle_close_event(conn);
         return;
     }
 
-    std::cout << "[WRITE] Client " << conn.fd << " -> Wrote " << bytes_written << " bytes\n";
+    spdlog::info("[WRITE] Client {} -> Wrote {} bytes", conn.fd, bytes_written);
     conn.outgoing.erase(conn.outgoing.begin(), conn.outgoing.begin() + bytes_written);
 
     if ( conn.outgoing.empty() )
     {
-        std::cout << "[MODIFY] Client " << conn.fd << " -> No more data to read, switching to EPOLLIN\n";
+        spdlog::info("[MODIFY] Client {} -> No more data to read, switching to EPOLLIN", conn.fd);
         epoll_.modify_conn(conn.fd, EPOLLIN);
     }
     else
     {
-        std::cout << "[MODIFY] Client " << conn.fd << " -> Still data to send, keeping EPOLLOUT\n";
+        spdlog::info("[MODIFY] Client {} -> Still have data to send, keeping EPOLLOUT", conn.fd);
     }
 }
 
@@ -393,11 +395,11 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_close_event(Connectio
 {
     int fd = conn.fd;
 
-    std::cout << "[CLOSE] Removing client " << fd << " from epoll\n";
+    spdlog::info("[CLOSE] Removing client {} from epoll", fd);
     epoll_.remove_conn(fd);
 
     if ( close(fd) == -1 )
-        std::cerr << "[ERROR] Failed to close client socket " << fd << ": " << std::strerror(errno) << "\n";
+        spdlog::error("[ERROR] Failed to close client {}'s socket -> err: {}", fd, std::strerror(errno));
     else
-        std::cout << "[CLOSE] Successfully closed client " << fd << "\n";
+        spdlog::info("[CLOSE] Successfully closed client {}", fd);
 }

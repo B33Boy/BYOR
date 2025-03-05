@@ -139,7 +139,7 @@ public:
         resp += "Status: " + std::to_string(static_cast<int>(status));
 
         // Parse data
-        resp += "\nResponse: ";
+        resp += ", Response: ";
         if ( data_len > 1 && message.size() >= sizeof(data_len) + sizeof(status) + data_len )
         {
             auto data_begin = status_begin + sizeof(status);

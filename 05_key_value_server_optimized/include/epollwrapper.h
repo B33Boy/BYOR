@@ -1,8 +1,9 @@
 #ifndef EPOLL_WRAPPER_H
 #define EPOLL_WRAPPER_H
 
+#include "spdlog/spdlog.h"
+
 #include <cstdint>
-#include <iostream>
 #include <stdexcept>
 #include <sys/epoll.h> // for epoll_create1(), epoll_ctl(), struct epoll_event
 #include <unistd.h>    // for close(), read()
@@ -90,7 +91,7 @@ public:
 
         // Close epoll fd
         if ( close(epoll_fd_) != 0 )
-            std::cerr << "Failed to close epoll fd. errno: " << errno << "\n";
+            spdlog::error("Failed to close epoll fd. err: {}", std::strerror(errno));
     }
 
     void add_conn_impl(int const fd) noexcept
@@ -125,9 +126,7 @@ public:
 
     [[nodiscard]] int wait_impl() noexcept
     {
-        int event_count = epoll_wait(epoll_fd_, events_.data(), max_events_, -1);
-        std::cout << "Number of ready events: " << event_count << '\n';
-        return event_count;
+        return epoll_wait(epoll_fd_, events_.data(), max_events_, -1);
     }
 
     [[nodiscard]] epoll_event& get_event_impl(int const idx)
@@ -140,7 +139,6 @@ public:
         auto it = connections_.find(fd);
         if ( it == connections_.end() )
             throw std::out_of_range("Connection not found");
-        // std::cerr << "Connection not found\n";
         return it->second;
     }
 
@@ -158,13 +156,13 @@ private:
         event.data.fd = fd;
 
         if ( epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &event) )
-            std::cerr << "Failed to add fd " << fd << " to epoll. errno: " << errno << "\n";
+            spdlog::error("Failed to add fd: {} to epoll. err: {}", fd, std::strerror(errno));
     }
 
     void unmonitor(int fd) const noexcept
     {
         if ( epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) )
-            std::cerr << "Failed to remove fd " << fd << " from epoll. errno: " << errno << "\n";
+            spdlog::error("Failed to remove fd: {} from epoll. err: {}", fd, std::strerror(errno));
     }
 };
 
