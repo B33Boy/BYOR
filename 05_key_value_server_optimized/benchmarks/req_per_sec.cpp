@@ -78,7 +78,7 @@ int main(int argc, char* argv[])
 {
     if ( argc < 3 )
     {
-        std::cout << "Input needs to be of the form: ./rps.cpp SERVER PORT";
+        std::cout << "Input needs to be of the form: ./req_per_sec SERVER PORT";
         return 1;
     }
 
