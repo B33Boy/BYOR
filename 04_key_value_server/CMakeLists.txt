@@ -26,4 +26,6 @@ target_link_libraries(server PRIVATE server_lib)
 add_executable(client src/client.cpp)
 target_link_libraries(client PRIVATE server_lib)
 
+add_executable(cli_client src/cli_client.cpp)
+
 add_subdirectory(tests)
