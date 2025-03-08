@@ -2,7 +2,7 @@
 
 int main()
 {
-    // spdlog::set_level(static_cast<spdlog::level::level_enum>(SPDLOG_LEVEL));
+    spdlog::set_level(static_cast<spdlog::level::level_enum>(SPDLOG_LEVEL));
 
     constexpr uint16_t port{ 1234 };
     constexpr uint8_t max_clients{ 100 };

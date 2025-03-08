@@ -40,3 +40,4 @@ set_spdlog_level(server)
 set_spdlog_level(client)
 
 add_subdirectory(tests)
+add_subdirectory(benchmarks)

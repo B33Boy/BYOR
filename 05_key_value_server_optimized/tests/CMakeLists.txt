@@ -14,7 +14,6 @@ add_executable(tests
     server_test.cpp
 )
 
-# Link GoogleTest and your project's library
 target_link_libraries(tests
     PRIVATE
     gtest
