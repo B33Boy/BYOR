@@ -3,10 +3,9 @@
 
 #include "spdlog/spdlog.h"
 
-#include <arpa/inet.h> // sockaddr_in, inet_pton, htons
-#include <cstdint>     // uint8_t, uint32_t
-#include <cstring>     // std::memcpy
-#include <iostream>
+#include <arpa/inet.h>  // sockaddr_in, inet_pton, htons
+#include <cstdint>      // uint8_t, uint32_t
+#include <cstring>      // std::memcpy
 #include <string>       // std::string, std::stoi
 #include <sys/socket.h> // socket, connect, send, recv
 #include <unistd.h>     // close
