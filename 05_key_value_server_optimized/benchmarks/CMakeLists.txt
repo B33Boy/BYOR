@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.14)
 project(Benchmarks)
 
-add_executable(req_per_sec req_per_sec.cpp)
+add_executable(throughput throughput.cpp)
 
-target_link_libraries(req_per_sec
+target_link_libraries(throughput
+    PRIVATE
+    spdlog::spdlog
+)
+
+add_executable(latency latency.cpp)
+target_link_libraries(latency
     PRIVATE
     spdlog::spdlog
 )
