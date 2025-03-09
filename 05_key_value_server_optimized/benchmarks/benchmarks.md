@@ -1,4 +1,5 @@
 # Results
+Each benchmark file generates an independent executable that is run 
 
 ## Throughput
 ### 04_key_value_server 
