@@ -5,7 +5,8 @@ project(server)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -flto")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto")
 
 if(CMAKE_BUILD_SANITIZE)
 message(STATUS "Enabling AddressSanitizer and UndefinedBehaviorSanitizer")
@@ -17,6 +18,7 @@ endif()
 include_directories(include)
 
 include(FetchContent)
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "Build shared library" FORCE)
 FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
