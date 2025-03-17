@@ -33,6 +33,10 @@ void run_benchmark(SocketClient<TcpTransport, RedisSerializer, RedisDeserializer
     for ( size_t i = 0; i < num_requests; i++ )
     {
         send_req_log(cmd);
+    }
+
+    for ( size_t i = 0; i < num_requests; i++ )
+    {
         resp_recv_log();
     }
 
