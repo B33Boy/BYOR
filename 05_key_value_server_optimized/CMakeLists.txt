@@ -34,6 +34,7 @@ target_link_libraries(client PRIVATE spdlog::spdlog)
 
 function(set_spdlog_level target)
     if(CMAKE_BUILD_TYPE MATCHES "Debug")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
         target_compile_definitions(${target} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG SPDLOG_LEVEL=SPDLOG_LEVEL_DEBUG)
     else()
         target_compile_definitions(${target} PRIVATE SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_WARN SPDLOG_LEVEL=SPDLOG_LEVEL_WARN )
