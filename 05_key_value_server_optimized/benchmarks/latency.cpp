@@ -9,18 +9,28 @@
  * This method assumes no pipelining
  */
 
+std::ofstream ofs("output.txt");
+
 std::vector<std::vector<std::string>> generate_cmds(size_t num_cmds)
 {
     std::vector<std::vector<std::string>> cmds(num_cmds);
 
-    for ( int shift = 0; shift < num_cmds; shift += 3 )
-        cmds[shift] = { "set", std::string(32 << shift, '*'), std::string(32 << shift, '*') };
+    size_t const step = (32 << 16) / (num_cmds - 1);
+
+    for ( size_t i = 0; i < num_cmds; i++ )
+    {
+        size_t field_size = step * i - 4;
+        if ( i == 0 )
+            field_size = 1;
+
+        cmds[i] = { "set", std::string(field_size, '*'), "*" };
+    }
 
     return cmds;
 }
 
-void gen_plot_point(SocketClient<TcpTransport, RedisSerializer, RedisDeserializer>& client,
-                    std::vector<double>& latencies, std::vector<std::string>& cmd)
+void calc_latency(SocketClient<TcpTransport, RedisSerializer, RedisDeserializer>& client,
+                  std::vector<double>& latencies, std::vector<std::string>& cmd)
 {
     for ( size_t i = 0; i < latencies.size(); i++ )
     {
@@ -59,6 +69,7 @@ void calc_output(std::vector<double>& latencies)
     std::cout << "99th Percentile : " << p99 << " ms\n";
 
     // TODO: call export_data function to output to file to generate graphs
+    ofs << avg << '\n';
 }
 
 void run_benchmark(SocketClient<TcpTransport, RedisSerializer, RedisDeserializer>& client, RedisSerializer& serializer,
@@ -72,7 +83,7 @@ void run_benchmark(SocketClient<TcpTransport, RedisSerializer, RedisDeserializer
 
     for ( auto& cmd : cmds )
     {
-        gen_plot_point(client, latencies, cmd);
+        calc_latency(client, latencies, cmd);
         calc_output(latencies);
     }
 }
@@ -97,7 +108,7 @@ int main(int argc, char* argv[])
     client.connect(addr, port); // TODO: probably should return bool if connection was successful
 
     constexpr size_t num_requests{ 1000 }; // Num of latencies to be averaged for one plot point
-    constexpr size_t num_iterations{ 16 }; // Num of plot points to see how server scales with a larger request
+    constexpr size_t num_iterations{ 20 }; // Num of plot points to see how server scales with a larger request
 
     run_benchmark(client, serializer, num_requests, num_iterations);
 
