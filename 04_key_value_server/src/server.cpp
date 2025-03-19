@@ -28,13 +28,13 @@ bool Server::set_nonblocking(int const fd) const noexcept
     int flags = sockwrapper_->fcntl(fd, F_GETFL);
     if ( flags == -1 )
     {
-        std::cerr << "Failed to GET fcntl():" << std::strerror(errno) << "\n";
+        // std::cerr << "Failed to GET fcntl():" << std::strerror(errno) << "\n";
         return false;
     }
 
     if ( sockwrapper_->fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1 )
     {
-        std::cerr << "Failed to SET fcntl():" << std::strerror(errno) << "\n";
+        // std::cerr << "Failed to SET fcntl():" << std::strerror(errno) << "\n";
         return false;
     }
     return true;
@@ -66,7 +66,7 @@ void Server::start()
     // Add server sock to epoll_
     epoll_->add_conn(server_fd_);
 
-    std::cout << "Created Server, now listening on port: " << port_ << "\n";
+    // std::cout << "Created Server, now listening on port: " << port_ << "\n";
 
     while ( running_ )
     {
@@ -90,7 +90,7 @@ void Server::start()
                     handle_close_event(event.data.fd);
             }
 
-            std::cout << "=========================================================" << "\n";
+            // std::cout << "=========================================================" << "\n";
         }
     }
 }
@@ -109,15 +109,15 @@ void Server::handle_new_connections() noexcept
 
     if ( client_fd == -1 )
     {
-        std::cerr << "[ERROR] Connection failed with client: " << std::strerror(errno) << "\n";
+        // std::cerr << "[ERROR] Connection failed with client: " << std::strerror(errno) << "\n";
         return;
     }
 
-    std::cout << "[INFO] New client connected: " << client_fd << "\n";
+    // std::cout << "[INFO] New client connected: " << client_fd << "\n";
 
     if ( !set_nonblocking(client_fd) )
     {
-        std::cerr << "[ERROR] Failed to set client socket as non-blocking: " << std::strerror(errno) << "\n";
+        // std::cerr << "[ERROR] Failed to set client socket as non-blocking: " << std::strerror(errno) << "\n";
         close(client_fd);
         return;
     }
@@ -135,7 +135,7 @@ void Server::handle_read_event(int const client_fd)
 
     if ( bytes_read == 0 )
     {
-        std::cout << "[DISCONNECT] Client " << client_fd << " disconnected.\n";
+        // std::cout << "[DISCONNECT] Client " << client_fd << " disconnected.\n";
         handle_close_event(client_fd);
         return;
     }
@@ -143,14 +143,14 @@ void Server::handle_read_event(int const client_fd)
     if ( bytes_read < 0 )
     {
         if ( errno == EAGAIN || errno == EWOULDBLOCK )
-            std::cerr << "[READ] Client " << client_fd
-                      << "-> No data available (non-blocking read), errno: " << std::strerror(errno) << "\n";
-        return;
+            // std::cerr << "[READ] Client " << client_fd << "-> No data available (non-blocking read), errno: " <<
+            // std::strerror(errno) << "\n";
+            return;
     }
 
     // 2. Add new data to the `Conn::incoming` buffer
     conn.incoming.insert(conn.incoming.end(), buf.begin(), buf.begin() + bytes_read);
-    std::cout << "[READ] Client " << client_fd << " -> Reading " << bytes_read << " bytes\n";
+    // std::cout << "[READ] Client " << client_fd << " -> Reading " << bytes_read << " bytes\n";
 
     // 3. Parse requests and generate responses
     while ( try_request(conn) )
@@ -160,7 +160,7 @@ void Server::handle_read_event(int const client_fd)
     // 4. Remove the message from `Conn::incoming`
     if ( !conn.outgoing.empty() )
     {
-        std::cout << "[MODIFY] Client " << client_fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
+        // std::cout << "[MODIFY] Client " << client_fd << " -> Outgoing buffer has data, enabling EPOLLOUT\n";
         epoll_->modify_conn(client_fd, EPOLLOUT);
         handle_write_event(
             client_fd); // Immediately call write event otherwise we have to wait for another loop to call it
@@ -172,7 +172,7 @@ bool Server::try_request(Connection& conn) noexcept
 {
     if ( conn.incoming.size() < LEN_FIELD_SIZE )
     {
-        std::cout << "[ERROR] Client " << conn.fd << " -> No more bytes to be read\n";
+        // std::cout << "[ERROR] Client " << conn.fd << " -> No more bytes to be read\n";
         return false;
     }
 
@@ -181,15 +181,15 @@ bool Server::try_request(Connection& conn) noexcept
 
     if ( data_len > MAX_MSG_FIELD_SIZE )
     {
-        std::cerr << "[ERROR] Client " << conn.fd
-                  << " -> given data_length greater than MAX_MSG_FIELD_SIZE, closing connection\n";
+        // std::cerr << "[ERROR] Client " << conn.fd << " -> given data_length greater than MAX_MSG_FIELD_SIZE, closing
+        // connection\n";
         handle_close_event(conn.fd); // TODO: NEED TO HANDLE SEGFAULT WHEN FUNCTION RETURNS and we try to access conn.fd
         return false;
     }
 
     if ( LEN_FIELD_SIZE + data_len > conn.incoming.size() )
     {
-        std::cout << "Client" << conn.fd << " -> Less incoming bytes than specified in data_len \n";
+        // std::cout << "Client" << conn.fd << " -> Less incoming bytes than specified in data_len \n";
         return false;
     }
 
@@ -198,14 +198,14 @@ bool Server::try_request(Connection& conn) noexcept
     // Validate memory before creating string_view
     if ( request == nullptr || data_len > conn.incoming.size() - LEN_FIELD_SIZE )
     {
-        std::cerr << "[ERROR] Client " << conn.fd << " -> Invalid request pointer or length.\n";
+        // std::cerr << "[ERROR] Client " << conn.fd << " -> Invalid request pointer or length.\n";
         return false;
     }
 
     std::vector<std::string> cmd;
     if ( !parse_req(request, data_len, cmd) )
     {
-        std::cout << "[ERROR] Client " << conn.fd << " -> Bad Request\n";
+        // std::cout << "[ERROR] Client " << conn.fd << " -> Bad Request\n";
         return false;
     }
 
@@ -223,7 +223,7 @@ bool Server::read_cmd_data(uint8_t const*& data, uint8_t const* const end, size_
 {
     if ( data + bytes_to_read > end )
     {
-        std::cout << "[ERROR] Can't read cmd data\n";
+        // std::cout << "[ERROR] Can't read cmd data\n";
         return false;
     }
 
@@ -255,13 +255,13 @@ bool Server::parse_req(uint8_t const* data, size_t size, std::vector<std::string
     uint32_t nstr{};
     if ( !read_cmd_length(data, end, nstr) )
     {
-        std::cout << "[ERROR] Can't read nstr\n";
+        // std::cout << "[ERROR] Can't read nstr\n";
         return false;
     }
 
     if ( nstr > MAX_CMD_ARGS )
     {
-        std::cerr << "[ERROR] Parsing -> Given number of cmds is greater than MAX CMD ARGS\n";
+        // std::cerr << "[ERROR] Parsing -> Given number of cmds is greater than MAX CMD ARGS\n";
         return false;
     }
 
@@ -271,14 +271,14 @@ bool Server::parse_req(uint8_t const* data, size_t size, std::vector<std::string
         uint32_t cmd_len{};
         if ( !read_cmd_length(data, end, cmd_len) )
         {
-            std::cout << "[ERROR] Can't read len" << i << "\n";
+            // std::cout << "[ERROR] Can't read len" << i << "\n";
             return false;
         }
 
         parsed_cmds.push_back(std::string());
         if ( !read_cmd_data(data, end, cmd_len, parsed_cmds.back()) )
         {
-            std::cout << "[ERROR] Can't read cmd" << i << "\n";
+            // std::cout << "[ERROR] Can't read cmd" << i << "\n";
             return false;
         }
     }
@@ -315,7 +315,7 @@ void Server::do_request(std::vector<std::string> const& cmd, Response& resp)
     }
     else
     {
-        std::cout << "Invalid command received\n";
+        // std::cout << "Invalid command received\n";
         resp.status = ResponseStatus::RES_ERR;
     }
 }
@@ -340,7 +340,7 @@ void Server::handle_write_event(int const client_fd)
 
     if ( conn.outgoing.empty() )
     {
-        std::cout << "[WRITE] Client " << client_fd << " -> No data to send, switching to EPOLLIN\n";
+        // std::cout << "[WRITE] Client " << client_fd << " -> No data to send, switching to EPOLLIN\n";
         epoll_->modify_conn(client_fd, EPOLLIN);
         return;
     }
@@ -349,24 +349,24 @@ void Server::handle_write_event(int const client_fd)
 
     if ( bytes_written < 0 )
     {
-        std::cerr << "[ERROR] Write error to client " << client_fd << ", errno: " << std::strerror(errno) << "\n";
+        // std::cerr << "[ERROR] Write error to client " << client_fd << ", errno: " << std::strerror(errno) << "\n";
         if ( errno == EAGAIN || errno == EWOULDBLOCK )
             return;
         handle_close_event(client_fd);
         return;
     }
 
-    std::cout << "[WRITE] Client " << client_fd << " -> Wrote " << bytes_written << " bytes\n";
+    // std::cout << "[WRITE] Client " << client_fd << " -> Wrote " << bytes_written << " bytes\n";
     conn.outgoing.erase(conn.outgoing.begin(), conn.outgoing.begin() + bytes_written);
 
     if ( conn.outgoing.empty() )
     {
-        std::cout << "[MODIFY] Client " << client_fd << " -> No more data to read, switching to EPOLLIN\n";
+        // std::cout << "[MODIFY] Client " << client_fd << " -> No more data to read, switching to EPOLLIN\n";
         epoll_->modify_conn(client_fd, EPOLLIN);
     }
     else
     {
-        std::cout << "[MODIFY] Client " << client_fd << " -> Still data to send, keeping EPOLLOUT\n";
+        // std::cout << "[MODIFY] Client " << client_fd << " -> Still data to send, keeping EPOLLOUT\n";
         epoll_->modify_conn(client_fd, EPOLLOUT);
     }
 }
@@ -375,10 +375,10 @@ void Server::handle_write_event(int const client_fd)
 void Server::handle_close_event(int client_fd)
 {
     epoll_->remove_conn(client_fd);
-    std::cout << "[CLOSE] Successfully removed client " << client_fd << " from epoll\n";
+    // std::cout << "[CLOSE] Successfully removed client " << client_fd << " from epoll\n";
 
     if ( close(client_fd) == -1 )
         std::cerr << "[ERROR] Failed to close client socket " << client_fd << ": " << std::strerror(errno) << "\n";
-    else
-        std::cout << "[CLOSE] Successfully closed client " << client_fd << "\n";
+    // else
+    //     std::cout << "[CLOSE] Successfully closed client " << client_fd << "\n";
 }

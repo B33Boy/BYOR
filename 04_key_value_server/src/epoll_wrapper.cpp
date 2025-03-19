@@ -68,7 +68,7 @@ void EpollWrapper::modify_conn(int const fd, uint32_t const event_flags) const n
 [[nodiscard]] int EpollWrapper::wait() noexcept
 {
     int event_count = epoll_wait(epoll_fd_, events_.data(), max_events_, -1);
-    std::cout << "Number of ready events: " << event_count << '\n';
+    // std::cout << "Number of ready events: " << event_count << '\n';
     return event_count;
 }
 
