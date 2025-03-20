@@ -171,7 +171,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::handle_read_event(Connection
     if ( !conn.outgoing.empty() )
     {
         spdlog::info("[MODIFY] Client {} -> Outgoing buffer has data, enabling EPOLLOUT", conn.fd);
-        handle_write_event(conn);
+        epoll_.modify_conn(conn.fd, EPOLLOUT);
     }
 }
 
