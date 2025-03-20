@@ -6,10 +6,20 @@
 #include <arpa/inet.h>  // sockaddr_in, inet_pton, htons
 #include <cstdint>      // uint8_t, uint32_t
 #include <cstring>      // std::memcpy
-#include <string>       // std::string, std::stoi
+#include <string>       // std::string, std::to_string, std::stoi
 #include <sys/socket.h> // socket, connect, send, recv
 #include <unistd.h>     // close
 #include <vector>       // std::vector
+
+template <typename T>
+concept Serializable = requires(T t, std::vector<std::string>& input) {
+    { t.serialize(input) } -> std::same_as<std::vector<uint8_t>>;
+};
+
+template <typename T>
+concept Deserializable = requires(T t, std::vector<uint8_t> const& input) {
+    { t.deserialize(input) } -> std::same_as<std::string>;
+};
 
 class TcpTransport
 {
@@ -152,7 +162,8 @@ private:
     size_t MAX_MSG_FIELD_SIZE{ 32 << 20 };
 };
 
-template <typename Transport, typename Serializer, typename Deserializer>
+template <class Transport, class Serializer, class Deserializer>
+    requires Serializable<Serializer> && Deserializable<Deserializer>
 class SocketClient
 {
 public:
