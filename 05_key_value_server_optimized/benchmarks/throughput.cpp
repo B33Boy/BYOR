@@ -34,22 +34,18 @@ void run_benchmark(SocketClient<TcpTransport, RedisSerializer, RedisDeserializer
     {
         send_req_log(cmd);
     }
-
-    for ( size_t i = 0; i < num_requests; i++ )
-    {
-        resp_recv_log();
-    }
+    resp_recv_log();
 
     // End time
     auto end_time = std::chrono::high_resolution_clock::now();
-    auto elapsed{ std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time) };
+    auto elapsed = std::chrono::duration<double>(end_time - start_time);
 
     double rps = num_requests / elapsed.count();
 
     std::cout << "Requests Sent: " << req_sent << "\n";
     std::cout << "Responses Received: " << resp_recv << "\n";
-    std::cout << "Time Elapsed: " << elapsed.count() << " seconds\n";
-    std::cout << "Requests Per (RPS): " << rps << "\n";
+    std::cout << "Time Elapsed: " << elapsed.count() << " microseconds\n";
+    std::cout << "Requests Per Second (RPS): " << rps << "\n";
 }
 
 int main(int argc, char* argv[])
