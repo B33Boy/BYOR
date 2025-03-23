@@ -341,6 +341,10 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::do_request(std::vector<std::
 template <class ISocketWrapperBase, class IEpollWrapperBase>
 void Server<ISocketWrapperBase, IEpollWrapperBase>::make_response(Response& resp, std::vector<uint8_t>& out)
 {
+    // +-----------+-------------+------+
+    // | resp_size | resp_status | data |
+    // +-----------+-------------+------+
+
     // Push resp length to outgoing buffer
     uint32_t resp_size = sizeof(resp.status) + resp.data.size();
     uint8_t* size_ptr = reinterpret_cast<uint8_t*>(&resp_size);
