@@ -344,6 +344,7 @@ void Server<ISocketWrapperBase, IEpollWrapperBase>::make_response(Response& resp
     // +-----------+-------------+------+
     // | resp_size | resp_status | data |
     // +-----------+-------------+------+
+    // resp_size = resp_status size + data size
 
     // Push resp length to outgoing buffer
     uint32_t resp_size = sizeof(resp.status) + resp.data.size();
